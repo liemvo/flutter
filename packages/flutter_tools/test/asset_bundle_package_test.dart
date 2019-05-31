@@ -26,7 +26,7 @@ void main() {
     // rolls into Flutter.
     return path?.replaceAll('/', fs.path.separator);
   }
-  void writePubspecFile(String path, String name, {List<String> assets}) {
+  void writePubspecFile(String path, String name, { List<String> assets }) {
     String assetsSection;
     if (assets == null) {
       assetsSection = '';
@@ -66,7 +66,7 @@ $assetsSection
       ..writeAsStringSync(packages);
   }
 
-  Future<Null> buildAndVerifyAssets(
+  Future<void> buildAndVerifyAssets(
     List<String> assets,
     List<String> packages,
     String expectedAssetManifest,
@@ -79,14 +79,14 @@ $assetsSection
         final String entryKey = Uri.encodeFull('packages/$packageName/$asset');
         expect(bundle.entries.containsKey(entryKey), true, reason: 'Cannot find key on bundle: $entryKey');
         expect(
-          utf8.decode(await bundle.entries[entryKey].contentsAsBytes()),
+          utf8.decode(bundle.entries[entryKey].contentsAsBytes()),
           asset,
         );
       }
     }
 
     expect(
-      utf8.decode(await bundle.entries['AssetManifest.json'].contentsAsBytes()),
+      utf8.decode(bundle.entries['AssetManifest.json'].contentsAsBytes()),
       expectedAssetManifest,
     );
   }
@@ -126,11 +126,11 @@ $assetsSection
       expect(bundle.entries.length, 3); // LICENSE, AssetManifest, FontManifest
       const String expectedAssetManifest = '{}';
       expect(
-        utf8.decode(await bundle.entries['AssetManifest.json'].contentsAsBytes()),
+        utf8.decode(bundle.entries['AssetManifest.json'].contentsAsBytes()),
         expectedAssetManifest,
       );
       expect(
-        utf8.decode(await bundle.entries['FontManifest.json'].contentsAsBytes()),
+        utf8.decode(bundle.entries['FontManifest.json'].contentsAsBytes()),
         '[]',
       );
     }, overrides: <Type, Generator>{
@@ -153,11 +153,11 @@ $assetsSection
       expect(bundle.entries.length, 3); // LICENSE, AssetManifest, FontManifest
       const String expectedAssetManifest = '{}';
       expect(
-        utf8.decode(await bundle.entries['AssetManifest.json'].contentsAsBytes()),
+        utf8.decode(bundle.entries['AssetManifest.json'].contentsAsBytes()),
         expectedAssetManifest,
       );
       expect(
-        utf8.decode(await bundle.entries['FontManifest.json'].contentsAsBytes()),
+        utf8.decode(bundle.entries['FontManifest.json'].contentsAsBytes()),
         '[]',
       );
     }, overrides: <Type, Generator>{

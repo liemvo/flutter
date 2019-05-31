@@ -1,7 +1,7 @@
 {
-  "anteMeridiemAbbreviation": "Manhã",
+  "anteMeridiemAbbreviation": "AM",
   "selectedRowCountTitleOne": "1 item selecionado",
-  "postMeridiemAbbreviation": "Tarde/noite",
+  "postMeridiemAbbreviation": "PM",
   "scriptCategory": "English-like",
   "timeOfDayFormat": "HH:mm",
   "@anteMeridiemAbbreviation": {"notUsed":"portuguese time format does not use a.m. indicator"},
@@ -52,5 +52,6 @@
   "collapsedIconTapHint": "Expandir",
   "remainingTextFieldCharacterCountZero": "TBD",
   "remainingTextFieldCharacterCountOne": "1 caractere restante",
-  "remainingTextFieldCharacterCountOther": "$remainingCount caracteres restantes"
+  "remainingTextFieldCharacterCountOther": "$remainingCount caracteres restantes",
+  "refreshIndicatorSemanticLabel": "Atualizar"
 }

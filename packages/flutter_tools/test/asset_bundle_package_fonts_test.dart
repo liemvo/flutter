@@ -26,7 +26,7 @@ void main() {
     // rolls into Flutter.
     return path?.replaceAll('/', fs.path.separator);
   }
-  void writePubspecFile(String path, String name, {String fontsSection}) {
+  void writePubspecFile(String path, String name, { String fontsSection }) {
     if (fontsSection == null) {
       fontsSection = '';
     } else {
@@ -60,7 +60,7 @@ $fontsSection
       ..writeAsStringSync(packages);
   }
 
-  Future<Null> buildAndVerifyFonts(
+  Future<void> buildAndVerifyFonts(
     List<String> localFonts,
     List<String> packageFonts,
     List<String> packages,
@@ -74,7 +74,7 @@ $fontsSection
         final String entryKey = 'packages/$packageName/$packageFont';
         expect(bundle.entries.containsKey(entryKey), true);
         expect(
-          utf8.decode(await bundle.entries[entryKey].contentsAsBytes()),
+          utf8.decode(bundle.entries[entryKey].contentsAsBytes()),
           packageFont,
         );
       }
@@ -82,14 +82,14 @@ $fontsSection
       for (String localFont in localFonts) {
         expect(bundle.entries.containsKey(localFont), true);
         expect(
-          utf8.decode(await bundle.entries[localFont].contentsAsBytes()),
+          utf8.decode(bundle.entries[localFont].contentsAsBytes()),
           localFont,
         );
       }
     }
 
     expect(
-      json.decode(utf8.decode(await bundle.entries['FontManifest.json'].contentsAsBytes())),
+      json.decode(utf8.decode(bundle.entries['FontManifest.json'].contentsAsBytes())),
       json.decode(expectedAssetManifest),
     );
   }

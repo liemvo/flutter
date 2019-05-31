@@ -29,12 +29,12 @@ void main() {
     });
     section('TEST WHETHER `flutter run --route` WORKS');
     await inDirectory(appDir, () async {
-      final Completer<Null> ready = Completer<Null>();
+      final Completer<void> ready = Completer<void>();
       bool ok;
       print('run: starting...');
       final Process run = await startProcess(
         path.join(flutterDirectory.path, 'bin', 'flutter'),
-        <String>['run', '--verbose', '-d', device.deviceId, '--route', '/smuggle-it', 'lib/route.dart'],
+        <String>['run', '--verbose', '--disable-service-auth-codes', '-d', device.deviceId, '--route', '/smuggle-it', 'lib/route.dart'],
       );
       run.stdout
         .transform<String>(utf8.decoder)

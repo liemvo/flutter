@@ -50,17 +50,16 @@ class ProtocolDiscovery {
   /// The discovered service URI.
   Future<Uri> get uri => _completer.future;
 
-  Future<Null> cancel() => _stopScrapingLogs();
+  Future<void> cancel() => _stopScrapingLogs();
 
-  Future<Null> _stopScrapingLogs() async {
+  Future<void> _stopScrapingLogs() async {
     await _deviceLogSubscription?.cancel();
     _deviceLogSubscription = null;
   }
 
   void _handleLine(String line) {
     Uri uri;
-
-    final RegExp r = RegExp('${RegExp.escape(serviceName)} listening on ((http|\/\/)[a-zA-Z0-9:/=\.\\[\\]]+)');
+    final RegExp r = RegExp('${RegExp.escape(serviceName)} listening on ((http|\/\/)[a-zA-Z0-9:/=_\\-\.\\[\\]]+)');
     final Match match = r.firstMatch(line);
 
     if (match != null) {

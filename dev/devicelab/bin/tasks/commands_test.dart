@@ -21,12 +21,12 @@ void main() {
     await device.unlock();
     final Directory appDir = dir(path.join(flutterDirectory.path, 'dev/integration_tests/ui'));
     await inDirectory(appDir, () async {
-      final Completer<Null> ready = Completer<Null>();
+      final Completer<void> ready = Completer<void>();
       bool ok;
       print('run: starting...');
       final Process run = await startProcess(
         path.join(flutterDirectory.path, 'bin', 'flutter'),
-        <String>['run', '--verbose', '-d', device.deviceId, 'lib/commands.dart'],
+        <String>['run', '--verbose', '--disable-service-auth-codes', '-d', device.deviceId, 'lib/commands.dart'],
       );
       final StreamController<String> stdout = StreamController<String>.broadcast();
       run.stdout
@@ -74,18 +74,18 @@ void main() {
       run.stdin.write('P');
       await driver.drive('none');
       final Future<String> reloadStartingText =
-        stdout.stream.firstWhere((String line) => line.endsWith('hot reload...'));
+        stdout.stream.firstWhere((String line) => line.endsWith('] Initializing hot reload...'));
       final Future<String> reloadEndingText =
-        stdout.stream.firstWhere((String line) => line.contains('Hot reload performed in '));
+        stdout.stream.firstWhere((String line) => line.contains('] Reloaded ') && line.endsWith('ms.'));
       print('test: pressing "r" to perform a hot reload...');
       run.stdin.write('r');
       await reloadStartingText;
       await reloadEndingText;
       await driver.drive('none');
       final Future<String> restartStartingText =
-        stdout.stream.firstWhere((String line) => line.endsWith('hot restart...'));
+        stdout.stream.firstWhere((String line) => line.endsWith('Performing hot restart...'));
       final Future<String> restartEndingText =
-        stdout.stream.firstWhere((String line) => line.contains('Hot restart performed in '));
+        stdout.stream.firstWhere((String line) => line.contains('] Restarted application in '));
       print('test: pressing "R" to perform a full reload...');
       run.stdin.write('R');
       await restartStartingText;
@@ -107,7 +107,7 @@ class DriveHelper {
 
   final int vmServicePort;
 
-  Future<Null> drive(String name) async {
+  Future<void> drive(String name) async {
     print('drive: running commands_$name check...');
     final Process drive = await startProcess(
       path.join(flutterDirectory.path, 'bin', 'flutter'),

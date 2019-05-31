@@ -16,6 +16,28 @@ import 'globals.dart';
 import 'version.dart';
 
 const String _kFlutterUA = 'UA-67589403-6';
+const String kEventReloadReasonParameterName = 'cd5';
+const String kEventReloadFinalLibraryCount = 'cd6';
+const String kEventReloadSyncedLibraryCount = 'cd7';
+const String kEventReloadSyncedClassesCount = 'cd8';
+const String kEventReloadSyncedProceduresCount = 'cd9';
+const String kEventReloadSyncedBytes = 'cd10';
+const String kEventReloadInvalidatedSourcesCount = 'cd11';
+const String kEventReloadTransferTimeInMs = 'cd12';
+const String kEventReloadOverallTimeInMs = 'cd13';
+
+const String kCommandRunIsEmulator = 'cd3';
+const String kCommandRunTargetName = 'cd4';
+const String kCommandRunProjectType = 'cd14';
+const String kCommandRunProjectHostLanguage = 'cd15';
+const String kCommandRunProjectModule = 'cd18';
+
+const String kCommandCreateAndroidLanguage = 'cd16';
+const String kCommandCreateIosLanguage = 'cd17';
+const String kCommandCreateProjectType = 'cd19';
+
+const String kCommandPackagesNumberPlugins = 'cd20';
+const String kCommandPackagesProjectModule = 'cd21';
 
 Usage get flutterUsage => Usage.instance;
 
@@ -26,9 +48,6 @@ class Usage {
     final FlutterVersion flutterVersion = FlutterVersion.instance;
     final String version = versionOverride ?? flutterVersion.getVersionString(redactUnknownBranches: true);
     _analytics = AnalyticsIO(_kFlutterUA, settingsName, version,
-        // Analyzer doesn't recognize that [Directory] objects match up due to a
-        // conditional import.
-        // ignore: argument_type_not_assignable
         documentDirectory: configDirOverride != null ? fs.directory(configDirOverride) : null);
 
     // Report a more detailed OS version string than package:usage does by default.
@@ -49,7 +68,7 @@ class Usage {
   }
 
   /// Returns [Usage] active in the current app context.
-  static Usage get instance => context[Usage];
+  static Usage get instance => context.get<Usage>();
 
   Analytics _analytics;
 
@@ -85,8 +104,11 @@ class Usage {
     _analytics.sendScreenView(command, parameters: parameters);
   }
 
-  void sendEvent(String category, String parameter,
-      { Map<String, String> parameters }) {
+  void sendEvent(
+    String category,
+    String parameter, {
+    Map<String, String> parameters,
+  }) {
     if (suppressAnalytics)
       return;
 
@@ -100,7 +122,7 @@ class Usage {
     String variableName,
     Duration duration, {
     String label,
-    }) {
+  }) {
     if (!suppressAnalytics) {
       _analytics.sendTiming(
         variableName,
@@ -122,7 +144,7 @@ class Usage {
 
   /// Returns when the last analytics event has been sent, or after a fixed
   /// (short) delay, whichever is less.
-  Future<Null> ensureAnalyticsSent() async {
+  Future<void> ensureAnalyticsSent() async {
     // TODO(devoncarew): This may delay tool exit and could cause some analytics
     // events to not be reported. Perhaps we could send the analytics pings
     // out-of-process from flutter_tools?
@@ -139,7 +161,7 @@ class Usage {
     printStatus('');
     printStatus('''
   ╔════════════════════════════════════════════════════════════════════════════╗
-  ║                 Welcome to Flutter! - https://flutter.io                   ║
+  ║                 Welcome to Flutter! - https://flutter.dev                  ║
   ║                                                                            ║
   ║ The Flutter tool anonymously reports feature usage statistics and crash    ║
   ║ reports to Google in order to help Google contribute improvements to       ║

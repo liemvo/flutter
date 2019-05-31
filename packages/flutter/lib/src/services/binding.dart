@@ -3,31 +3,31 @@
 // found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
 import 'asset_bundle.dart';
-import 'platform_messages.dart';
+import 'binary_messenger.dart';
 
-/// Listens for platform messages and directs them to [BinaryMessages].
+/// Listens for platform messages and directs them to the [defaultBinaryMessenger].
 ///
 /// The [ServicesBinding] also registers a [LicenseEntryCollector] that exposes
 /// the licenses found in the `LICENSE` file stored at the root of the asset
 /// bundle, and implements the `ext.flutter.evict` service extension (see
 /// [evict]).
-abstract class ServicesBinding extends BindingBase {
-  // This class is intended to be used as a mixin, and should not be
-  // extended directly.
-  factory ServicesBinding._() => null;
-
+mixin ServicesBinding on BindingBase {
   @override
   void initInstances() {
     super.initInstances();
-    ui.window
-      ..onPlatformMessage = BinaryMessages.handlePlatformMessage;
+    _instance = this;
+    window
+      ..onPlatformMessage = defaultBinaryMessenger.handlePlatformMessage;
     initLicenses();
   }
+
+  /// The current [ServicesBinding], if one has been created.
+  static ServicesBinding get instance => _instance;
+  static ServicesBinding _instance;
 
   /// Adds relevant licenses to the [LicenseRegistry].
   ///
@@ -78,7 +78,7 @@ abstract class ServicesBinding extends BindingBase {
       if (split >= 0) {
         result.add(LicenseEntryWithLineBreaks(
           license.substring(0, split).split('\n'),
-          license.substring(split + 2)
+          license.substring(split + 2),
         ));
       } else {
         result.add(LicenseEntryWithLineBreaks(const <String>[], license));
@@ -90,17 +90,21 @@ abstract class ServicesBinding extends BindingBase {
   @override
   void initServiceExtensions() {
     super.initServiceExtensions();
-    registerStringServiceExtension(
-      // ext.flutter.evict value=foo.png will cause foo.png to be evicted from
-      // the rootBundle cache and cause the entire image cache to be cleared.
-      // This is used by hot reload mode to clear out the cache of resources
-      // that have changed.
-      name: 'evict',
-      getter: () async => '',
-      setter: (String value) async {
-        evict(value);
-      }
-    );
+
+    assert(() {
+      registerStringServiceExtension(
+        // ext.flutter.evict value=foo.png will cause foo.png to be evicted from
+        // the rootBundle cache and cause the entire image cache to be cleared.
+        // This is used by hot reload mode to clear out the cache of resources
+        // that have changed.
+        name: 'evict',
+        getter: () async => '',
+        setter: (String value) async {
+          evict(value);
+        },
+      );
+      return true;
+    }());
   }
 
   /// Called in response to the `ext.flutter.evict` service extension.

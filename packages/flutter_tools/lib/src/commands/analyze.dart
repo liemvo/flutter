@@ -20,7 +20,7 @@ class AnalyzeCommand extends FlutterCommand {
         help: 'Analyze the current project, if applicable.', defaultsTo: true);
     argParser.addFlag('dartdocs',
         negatable: false,
-        help: 'List every public member that is lacking documentation.\n'
+        help: 'List every public member that is lacking documentation. '
               '(The public_member_api_docs lint must be enabled in analysis_options.yaml)',
         hide: !verboseHelp);
     argParser.addFlag('watch',
@@ -45,7 +45,7 @@ class AnalyzeCommand extends FlutterCommand {
 
     // Not used by analyze --watch
     argParser.addFlag('congratulate',
-        help: 'Show output even when there are no errors, warnings, hints, or lints.\n'
+        help: 'Show output even when there are no errors, warnings, hints, or lints. '
               'Ignored if --watch is specified.',
         defaultsTo: true);
     argParser.addFlag('preamble',
@@ -65,6 +65,11 @@ class AnalyzeCommand extends FlutterCommand {
   String get description => "Analyze the project's Dart code.";
 
   @override
+  Future<Set<DevelopmentArtifact>> get requiredArtifacts async => const <DevelopmentArtifact>{
+    DevelopmentArtifact.universal,
+  };
+
+  @override
   bool get shouldRunPub {
     // If they're not analyzing the current project.
     if (!argResults['current-package']) {
@@ -80,20 +85,22 @@ class AnalyzeCommand extends FlutterCommand {
   }
 
   @override
-  Future<Null> runCommand() {
+  Future<FlutterCommandResult> runCommand() async {
     if (argResults['watch']) {
-      return AnalyzeContinuously(
+      await AnalyzeContinuously(
         argResults,
         runner.getRepoRoots(),
         runner.getRepoPackages(),
       ).analyze();
+      return null;
     } else {
-      return AnalyzeOnce(
+      await AnalyzeOnce(
         argResults,
         runner.getRepoRoots(),
         runner.getRepoPackages(),
         workingDirectory: workingDirectory,
       ).analyze();
+      return null;
     }
   }
 }

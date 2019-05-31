@@ -5,7 +5,7 @@
 import 'dart:async';
 
 import 'package:args/args.dart';
-import 'package:flutter_tools/src/asset.dart';
+import 'package:flutter_tools/src/asset.dart' hide defaultManifestPath;
 import 'package:flutter_tools/src/base/context.dart';
 import 'package:flutter_tools/src/base/file_system.dart' as libfs;
 import 'package:flutter_tools/src/base/io.dart';
@@ -30,20 +30,18 @@ const List<String> _kRequiredOptions = <String>[
   _kOptionComponentName,
 ];
 
-Future<Null> main(List<String> args) {
-  return runInContext<Null>(() => run(args), overrides: <Type, Generator>{
+Future<void> main(List<String> args) {
+  return runInContext<void>(() => run(args), overrides: <Type, Generator>{
     Usage: () => DisabledUsage(),
   });
 }
 
-Future<Null> writeFile(libfs.File outputFile, DevFSContent content) async {
+void writeFile(libfs.File outputFile, DevFSContent content) {
   outputFile.createSync(recursive: true);
-  final List<int> data = await content.contentsAsBytes();
-  outputFile.writeAsBytesSync(data);
-  return null;
+  content.copyToFile(outputFile);
 }
 
-Future<Null> run(List<String> args) async {
+Future<void> run(List<String> args) async {
   final ArgParser parser = ArgParser()
     ..addOption(_kOptionPackages, help: 'The .packages file')
     ..addOption(_kOptionAsset,
@@ -72,18 +70,16 @@ Future<Null> run(List<String> args) async {
     exit(1);
   }
 
-  final List<Future<Null>> calls = <Future<Null>>[];
   assets.entries.forEach((String fileName, DevFSContent content) {
     final libfs.File outputFile = libfs.fs.file(libfs.fs.path.join(assetDir, fileName));
-    calls.add(writeFile(outputFile, content));
+    writeFile(outputFile, content);
   });
-  await Future.wait<Null>(calls);
 
   final String outputMan = argResults[_kOptionAssetManifestOut];
   await writeFuchsiaManifest(assets, argResults[_kOptionAsset], outputMan, argResults[_kOptionComponentName]);
 }
 
-Future<Null> writeFuchsiaManifest(AssetBundle assets, String outputBase, String fileDest, String componentName) async {
+Future<void> writeFuchsiaManifest(AssetBundle assets, String outputBase, String fileDest, String componentName) async {
 
   final libfs.File destFile = libfs.fs.file(fileDest);
   await destFile.create(recursive: true);

@@ -78,9 +78,11 @@ class ButtonTheme extends InheritedWidget {
     bool alignedDropdown = false,
     Color buttonColor,
     Color disabledColor,
+    Color focusColor,
+    Color hoverColor,
     Color highlightColor,
     Color splashColor,
-    ColorScheme colorScheme = const ColorScheme.light(),
+    ColorScheme colorScheme,
     MaterialTapTargetSize materialTapTargetSize,
     Widget child,
   }) : assert(textTheme != null),
@@ -88,7 +90,6 @@ class ButtonTheme extends InheritedWidget {
        assert(height != null && height >= 0.0),
        assert(alignedDropdown != null),
        assert(layoutBehavior != null),
-       assert(colorScheme != null),
        data = ButtonThemeData(
          textTheme: textTheme,
          minWidth: minWidth,
@@ -99,6 +100,8 @@ class ButtonTheme extends InheritedWidget {
          layoutBehavior: layoutBehavior,
          buttonColor: buttonColor,
          disabledColor: disabledColor,
+         focusColor: focusColor,
+         hoverColor: hoverColor,
          highlightColor: highlightColor,
          splashColor: splashColor,
          colorScheme: colorScheme,
@@ -140,16 +143,17 @@ class ButtonTheme extends InheritedWidget {
     bool alignedDropdown = false,
     Color buttonColor,
     Color disabledColor,
+    Color focusColor,
+    Color hoverColor,
     Color highlightColor,
     Color splashColor,
-    ColorScheme colorScheme = const ColorScheme.light(),
+    ColorScheme colorScheme,
     Widget child,
     ButtonBarLayoutBehavior layoutBehavior = ButtonBarLayoutBehavior.padded,
   }) : assert(textTheme != null),
        assert(minWidth != null && minWidth >= 0.0),
        assert(height != null && height >= 0.0),
        assert(alignedDropdown != null),
-       assert(colorScheme != null),
        data = ButtonThemeData(
          textTheme: textTheme,
          minWidth: minWidth,
@@ -160,6 +164,8 @@ class ButtonTheme extends InheritedWidget {
          layoutBehavior: layoutBehavior,
          buttonColor: buttonColor,
          disabledColor: disabledColor,
+         focusColor: focusColor,
+         hoverColor: hoverColor,
          highlightColor: highlightColor,
          splashColor: splashColor,
          colorScheme: colorScheme,
@@ -177,8 +183,19 @@ class ButtonTheme extends InheritedWidget {
   /// ButtonThemeData theme = ButtonTheme.of(context);
   /// ```
   static ButtonThemeData of(BuildContext context) {
-    final ButtonTheme result = context.inheritFromWidgetOfExactType(ButtonTheme);
-    return result?.data ?? Theme.of(context).buttonTheme;
+    final ButtonTheme inheritedButtonTheme = context.inheritFromWidgetOfExactType(ButtonTheme);
+    ButtonThemeData buttonTheme = inheritedButtonTheme?.data;
+    if (buttonTheme?.colorScheme == null) { // if buttonTheme or buttonTheme.colorScheme is null
+      final ThemeData theme = Theme.of(context);
+      buttonTheme ??= theme.buttonTheme;
+      if (buttonTheme.colorScheme == null) {
+        buttonTheme = buttonTheme.copyWith(
+          colorScheme: theme.buttonTheme.colorScheme ?? theme.colorScheme,
+        );
+        assert(buttonTheme.colorScheme != null);
+      }
+    }
+    return buttonTheme;
   }
 
   @override
@@ -194,7 +211,9 @@ class ButtonThemeData extends Diagnosticable {
   /// Create a button theme object that can be used with [ButtonTheme]
   /// or [ThemeData].
   ///
-  /// The [textTheme], [minWidth], and [height] parameters must not be null.
+  /// The [textTheme], [minWidth], [height], [alignedDropDown], and
+  /// [layoutBehavior] parameters must not be null. The [minWidth] and
+  /// [height] parameters must greater than or equal to zero.
   ///
   /// The ButtonTheme's methods that have a [MaterialButton] parameter and
   /// have a name with a `get` prefix are used by [RaisedButton],
@@ -209,18 +228,21 @@ class ButtonThemeData extends Diagnosticable {
     this.alignedDropdown = false,
     Color buttonColor,
     Color disabledColor,
+    Color focusColor,
+    Color hoverColor,
     Color highlightColor,
     Color splashColor,
-    this.colorScheme = const ColorScheme.light(),
+    this.colorScheme,
     MaterialTapTargetSize materialTapTargetSize,
   }) : assert(textTheme != null),
        assert(minWidth != null && minWidth >= 0.0),
        assert(height != null && height >= 0.0),
        assert(alignedDropdown != null),
        assert(layoutBehavior != null),
-       assert(colorScheme != null),
        _buttonColor = buttonColor,
        _disabledColor = disabledColor,
+       _focusColor = focusColor,
+       _hoverColor = hoverColor,
        _highlightColor = highlightColor,
        _splashColor = splashColor,
        _padding = padding,
@@ -255,6 +277,7 @@ class ButtonThemeData extends Diagnosticable {
 
   /// Simply a convenience that returns [minWidth] and [height] as a
   /// [BoxConstraints] object:
+  ///
   /// ```dart
   /// return BoxConstraints(
   ///   minWidth: minWidth,
@@ -280,12 +303,12 @@ class ButtonThemeData extends Diagnosticable {
   EdgeInsetsGeometry get padding {
     if (_padding != null)
       return _padding;
-   switch (textTheme) {
+    switch (textTheme) {
       case ButtonTextTheme.normal:
       case ButtonTextTheme.accent:
         return const EdgeInsets.symmetric(horizontal: 16.0);
       case ButtonTextTheme.primary:
-       return const EdgeInsets.symmetric(horizontal: 24.0);
+        return const EdgeInsets.symmetric(horizontal: 24.0);
     }
     assert(false);
     return EdgeInsets.zero;
@@ -339,6 +362,10 @@ class ButtonThemeData extends Diagnosticable {
   ///
   /// This property is null by default.
   ///
+  /// If the button is in the focused, hovering, or highlighted state, then the
+  /// [focusColor], [hoverColor], or [highlightColor] will take precedence over
+  /// the [focusColor].
+  ///
   /// See also:
   ///
   ///  * [getFillColor], which is used by [RaisedButton] to compute its
@@ -354,6 +381,32 @@ class ButtonThemeData extends Diagnosticable {
   ///  * [getDisabledFillColor], which is used by [RaisedButton] to compute its
   ///    background fill color.
   final Color _disabledColor;
+
+  /// The fill color of the button when it has the input focus.
+  ///
+  /// This property is null by default.
+  ///
+  /// If the button is in the hovering or highlighted state, then the [hoverColor]
+  /// or [highlightColor] will take precedence over the [focusColor].
+  ///
+  /// See also:
+  ///
+  ///  * [getFocusColor], which is used by [RaisedButton], [OutlineButton]
+  ///    and [FlatButton].
+  final Color _focusColor;
+
+  /// The fill color of the button when a pointer is hovering over it.
+  ///
+  /// This property is null by default.
+  ///
+  /// If the button is in the highlighted state, then the [highlightColor] will
+  /// take precedence over the [hoverColor].
+  ///
+  /// See also:
+  ///
+  ///  * [getHoverColor], which is used by [RaisedButton], [OutlineButton]
+  ///    and [FlatButton].
+  final Color _hoverColor;
 
   /// The color of the overlay that appears when a button is pressed.
   ///
@@ -399,7 +452,7 @@ class ButtonThemeData extends Diagnosticable {
 
   /// The [button]'s overall brightness.
   ///
-  /// Returns the button's [MaterialButton.colorBrightness] it it is non-null,
+  /// Returns the button's [MaterialButton.colorBrightness] if it is non-null,
   /// otherwise the color scheme's [ColorScheme.brightness] is returned.
   Brightness getBrightness(MaterialButton button) {
     return button.colorBrightness ?? colorScheme.brightness;
@@ -433,11 +486,11 @@ class ButtonThemeData extends Diagnosticable {
   }
 
   /// The [button]'s background color when [MaterialButton.onPressed] is null
-  /// (when MaterialButton.enabled is false).
+  /// (when [MaterialButton.enabled] is false).
   ///
   /// Returns the button's [MaterialButton.disabledColor] if it is non-null.
   ///
-  /// Otherwise the the value of the `disabledColor` constructor parameter
+  /// Otherwise the value of the `disabledColor` constructor parameter
   /// is returned, if it is non-null.
   ///
   /// Otherwise the color scheme's [ColorScheme.onSurface] color is returned
@@ -480,7 +533,7 @@ class ButtonThemeData extends Diagnosticable {
     if (fillColor != null)
       return fillColor;
 
-    if (button is FlatButton || button is OutlineButton)
+    if (button is FlatButton || button is OutlineButton || button.runtimeType == MaterialButton)
       return null;
 
     if (button.enabled && button is RaisedButton && _buttonColor != null)
@@ -579,6 +632,32 @@ class ButtonThemeData extends Diagnosticable {
     return getTextColor(button).withOpacity(0.12);
   }
 
+  /// The fill color of the button when it has input focus.
+  ///
+  /// Returns the button's [MaterialButton.focusColor] if it is non-null.
+  /// Otherwise the focus color depends on [getTextTheme]:
+  ///
+  ///  * [ButtonTextTheme.normal], [ButtonTextTheme.accent]: returns the
+  ///    value of the `focusColor` constructor parameter if it is non-null,
+  ///    otherwise the value of [getTextColor] with opacity 0.12.
+  ///  * [ButtonTextTheme.primary], returns [Colors.transparent].
+  Color getFocusColor(MaterialButton button) {
+    return button.focusColor ?? _focusColor ?? getTextColor(button).withOpacity(0.12);
+  }
+
+  /// The fill color of the button when it has input focus.
+  ///
+  /// Returns the button's [MaterialButton.focusColor] if it is non-null.
+  /// Otherwise the focus color depends on [getTextTheme]:
+  ///
+  ///  * [ButtonTextTheme.normal], [ButtonTextTheme.accent],
+  ///    [ButtonTextTheme.primary]: returns the value of the `focusColor`
+  ///    constructor parameter if it is non-null, otherwise the value of
+  ///    [getTextColor] with opacity 0.04.
+  Color getHoverColor(MaterialButton button) {
+    return button.hoverColor ?? _hoverColor ?? getTextColor(button).withOpacity(0.04);
+  }
+
   /// The color of the overlay that appears when the [button] is pressed.
   ///
   /// Returns the button's [MaterialButton.highlightColor] if it is non-null.
@@ -617,20 +696,51 @@ class ButtonThemeData extends Diagnosticable {
     return 2.0;
   }
 
+  /// The [button]'s elevation when it is enabled and has focus.
+  ///
+  /// Returns the button's [MaterialButton.focusElevation] if it is non-null.
+  ///
+  /// If button is a [FlatButton] or an [OutlineButton] then the focus
+  /// elevation is 0.0, otherwise the highlight elevation is 4.0.
+  double getFocusElevation(MaterialButton button) {
+    if (button.focusElevation != null)
+      return button.focusElevation;
+    if (button is FlatButton)
+      return 0.0;
+    if (button is OutlineButton)
+      return 0.0;
+    return 4.0;
+  }
+
+  /// The [button]'s elevation when it is enabled and has focus.
+  ///
+  /// Returns the button's [MaterialButton.hoverElevation] if it is non-null.
+  ///
+  /// If button is a [FlatButton] or an [OutlineButton] then the hover
+  /// elevation is 0.0, otherwise the highlight elevation is 4.0.
+  double getHoverElevation(MaterialButton button) {
+    if (button.hoverElevation != null)
+      return button.hoverElevation;
+    if (button is FlatButton)
+      return 0.0;
+    if (button is OutlineButton)
+      return 0.0;
+    return 4.0;
+  }
+
   /// The [button]'s elevation when it is enabled and has been pressed.
   ///
   /// Returns the button's [MaterialButton.highlightElevation] if it is non-null.
   ///
-  /// If button is a [FlatButton] then the highlight elevation is 0.0, if it's
-  /// a [OutlineButton] then the highlight elevation is 2.0, otherise the
-  /// highlight elevation is 8.0.
+  /// If button is a [FlatButton] or an [OutlineButton] then the highlight
+  /// elevation is 0.0, otherwise the highlight elevation is 8.0.
   double getHighlightElevation(MaterialButton button) {
     if (button.highlightElevation != null)
       return button.highlightElevation;
     if (button is FlatButton)
       return 0.0;
     if (button is OutlineButton)
-      return 2.0;
+      return 0.0;
     return 8.0;
   }
 
@@ -639,7 +749,7 @@ class ButtonThemeData extends Diagnosticable {
   ///
   /// Returns the button's [MaterialButton.elevation] if it is non-null.
   ///
-  /// Otheriwse the disabled elevation is 0.0.
+  /// Otherwise the disabled elevation is 0.0.
   double getDisabledElevation(MaterialButton button) {
     if (button.disabledElevation != null)
       return button.disabledElevation;
@@ -719,6 +829,7 @@ class ButtonThemeData extends Diagnosticable {
   /// replaced with the non-null parameter values.
   ButtonThemeData copyWith({
     ButtonTextTheme textTheme,
+    ButtonBarLayoutBehavior layoutBehavior,
     double minWidth,
     double height,
     EdgeInsetsGeometry padding,
@@ -726,6 +837,8 @@ class ButtonThemeData extends Diagnosticable {
     bool alignedDropdown,
     Color buttonColor,
     Color disabledColor,
+    Color focusColor,
+    Color hoverColor,
     Color highlightColor,
     Color splashColor,
     ColorScheme colorScheme,
@@ -733,6 +846,7 @@ class ButtonThemeData extends Diagnosticable {
   }) {
     return ButtonThemeData(
       textTheme: textTheme ?? this.textTheme,
+      layoutBehavior: layoutBehavior ?? this.layoutBehavior,
       minWidth: minWidth ?? this.minWidth,
       height: height ?? this.height,
       padding: padding ?? this.padding,
@@ -740,6 +854,8 @@ class ButtonThemeData extends Diagnosticable {
       alignedDropdown: alignedDropdown ?? this.alignedDropdown,
       buttonColor: buttonColor ?? _buttonColor,
       disabledColor: disabledColor ?? _disabledColor,
+      focusColor: focusColor ?? _focusColor,
+      hoverColor: hoverColor ?? _hoverColor,
       highlightColor: highlightColor ?? _highlightColor,
       splashColor: splashColor ?? _splashColor,
       colorScheme: colorScheme ?? this.colorScheme,
@@ -760,6 +876,8 @@ class ButtonThemeData extends Diagnosticable {
         && alignedDropdown == typedOther.alignedDropdown
         && _buttonColor == typedOther._buttonColor
         && _disabledColor == typedOther._disabledColor
+        && _focusColor == typedOther._focusColor
+        && _hoverColor == typedOther._hoverColor
         && _highlightColor == typedOther._highlightColor
         && _splashColor == typedOther._splashColor
         && colorScheme == typedOther.colorScheme
@@ -777,6 +895,8 @@ class ButtonThemeData extends Diagnosticable {
       alignedDropdown,
       _buttonColor,
       _disabledColor,
+      _focusColor,
+      _hoverColor,
       _highlightColor,
       _splashColor,
       colorScheme,
@@ -800,6 +920,8 @@ class ButtonThemeData extends Diagnosticable {
     ));
     properties.add(DiagnosticsProperty<Color>('buttonColor', _buttonColor, defaultValue: null));
     properties.add(DiagnosticsProperty<Color>('disabledColor', _disabledColor, defaultValue: null));
+    properties.add(DiagnosticsProperty<Color>('focusColor', _focusColor, defaultValue: null));
+    properties.add(DiagnosticsProperty<Color>('hoverColor', _hoverColor, defaultValue: null));
     properties.add(DiagnosticsProperty<Color>('highlightColor', _highlightColor, defaultValue: null));
     properties.add(DiagnosticsProperty<Color>('splashColor', _splashColor, defaultValue: null));
     properties.add(DiagnosticsProperty<ColorScheme>('colorScheme', colorScheme, defaultValue: defaultTheme.colorScheme));

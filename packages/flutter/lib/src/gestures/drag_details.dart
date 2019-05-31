@@ -103,7 +103,7 @@ class DragUpdateDetails {
     this.sourceTimeStamp,
     this.delta = Offset.zero,
     this.primaryDelta,
-    @required this.globalPosition
+    @required this.globalPosition,
   }) : assert(delta != null),
        assert(primaryDelta == null
            || (primaryDelta == delta.dx && delta.dy == 0.0)
@@ -147,7 +147,7 @@ class DragUpdateDetails {
 /// has moved again.
 ///
 /// The `details` object provides the position of the touch and the distance it
-/// has travelled since the last update.
+/// has traveled since the last update.
 ///
 /// See [DragGestureRecognizer.onUpdate].
 typedef GestureDragUpdateCallback = void Function(DragUpdateDetails details);

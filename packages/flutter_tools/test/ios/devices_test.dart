@@ -5,12 +5,15 @@
 import 'dart:async';
 
 import 'package:file/file.dart';
+import 'package:file/memory.dart';
 import 'package:flutter_tools/src/application_package.dart';
 import 'package:flutter_tools/src/base/file_system.dart';
 import 'package:flutter_tools/src/base/io.dart';
 import 'package:flutter_tools/src/device.dart';
 import 'package:flutter_tools/src/ios/devices.dart';
 import 'package:flutter_tools/src/ios/mac.dart';
+import 'package:flutter_tools/src/macos/xcode.dart';
+import 'package:flutter_tools/src/project.dart';
 import 'package:mockito/mockito.dart';
 import 'package:platform/platform.dart';
 import 'package:process/process.dart';
@@ -77,6 +80,25 @@ f577a7903cc54959be2e34bc4f7f80b7009efcf4
     }, overrides: <Type, Generator>{
       IMobileDevice: () => mockIMobileDevice,
     });
+
+    testUsingContext('returns attached devices and ignores devices that cannot be found by ideviceinfo', () async {
+      when(iMobileDevice.isInstalled).thenReturn(true);
+      when(iMobileDevice.getAvailableDeviceIDs())
+          .thenAnswer((Invocation invocation) => Future<String>.value('''
+98206e7a4afd4aedaff06e687594e089dede3c44
+f577a7903cc54959be2e34bc4f7f80b7009efcf4
+'''));
+      when(iMobileDevice.getInfoForDevice('98206e7a4afd4aedaff06e687594e089dede3c44', 'DeviceName'))
+          .thenAnswer((_) => Future<String>.value('La tele me regarde'));
+      when(iMobileDevice.getInfoForDevice('f577a7903cc54959be2e34bc4f7f80b7009efcf4', 'DeviceName'))
+          .thenThrow(IOSDeviceNotFoundError('Device not found'));
+      final List<IOSDevice> devices = await IOSDevice.getAttachedDevices();
+      expect(devices, hasLength(1));
+      expect(devices[0].id, '98206e7a4afd4aedaff06e687594e089dede3c44');
+      expect(devices[0].name, 'La tele me regarde');
+    }, overrides: <Type, Generator>{
+      IMobileDevice: () => mockIMobileDevice,
+    });
   });
 
   group('decodeSyslog', () {
@@ -100,7 +122,7 @@ f577a7903cc54959be2e34bc4f7f80b7009efcf4
     });
 
     testUsingContext('suppresses non-Flutter lines from output', () async {
-      when(mockIMobileDevice.startLogger()).thenAnswer((Invocation invocation) {
+      when(mockIMobileDevice.startLogger('123456')).thenAnswer((Invocation invocation) {
         final Process mockProcess = MockProcess();
         when(mockProcess.stdout).thenAnswer((Invocation invocation) =>
             Stream<List<int>>.fromIterable(<List<int>>['''
@@ -130,7 +152,7 @@ f577a7903cc54959be2e34bc4f7f80b7009efcf4
     });
 
     testUsingContext('includes multi-line Flutter logs in the output', () async {
-      when(mockIMobileDevice.startLogger()).thenAnswer((Invocation invocation) {
+      when(mockIMobileDevice.startLogger('123456')).thenAnswer((Invocation invocation) {
         final Process mockProcess = MockProcess();
         when(mockProcess.stdout).thenAnswer((Invocation invocation) =>
             Stream<List<int>>.fromIterable(<List<int>>['''
@@ -163,5 +185,43 @@ f577a7903cc54959be2e34bc4f7f80b7009efcf4
     }, overrides: <Type, Generator>{
       IMobileDevice: () => mockIMobileDevice,
     });
+  });
+
+  testUsingContext('IOSDevice.isSupportedForProject is true on module project', () async {
+    fs.file('pubspec.yaml')
+      ..createSync()
+      ..writeAsStringSync(r'''
+name: example
+
+flutter:
+  module: {}
+''');
+    fs.file('.packages').createSync();
+    final FlutterProject flutterProject = FlutterProject.current();
+
+    expect(IOSDevice('test').isSupportedForProject(flutterProject), true);
+  }, overrides: <Type, Generator>{
+    FileSystem: () => MemoryFileSystem(),
+  });
+
+  testUsingContext('IOSDevice.isSupportedForProject is true with editable host app', () async {
+    fs.file('pubspec.yaml').createSync();
+    fs.file('.packages').createSync();
+    fs.directory('ios').createSync();
+    final FlutterProject flutterProject = FlutterProject.current();
+
+    expect(IOSDevice('test').isSupportedForProject(flutterProject), true);
+  }, overrides: <Type, Generator>{
+    FileSystem: () => MemoryFileSystem(),
+  });
+
+  testUsingContext('IOSDevice.isSupportedForProject is false with no host app and no module', () async {
+    fs.file('pubspec.yaml').createSync();
+    fs.file('.packages').createSync();
+    final FlutterProject flutterProject = FlutterProject.current();
+
+    expect(IOSDevice('test').isSupportedForProject(flutterProject), false);
+  }, overrides: <Type, Generator>{
+    FileSystem: () => MemoryFileSystem(),
   });
 }

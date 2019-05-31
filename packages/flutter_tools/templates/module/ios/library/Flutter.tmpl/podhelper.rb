@@ -23,7 +23,7 @@ end
 def flutter_root(f)
     generated_xcode_build_settings = parse_KV_file(File.join(f, File.join('.ios', 'Flutter', 'Generated.xcconfig')))
     if generated_xcode_build_settings.empty?
-        puts "Generated.xcconfig must exist. Make sure `flutter packages get` is executed in ${f}."
+        puts "Generated.xcconfig must exist. Make sure `flutter pub get` is executed in #{f}."
         exit
     end
     generated_xcode_build_settings.map { |p|
@@ -33,6 +33,8 @@ def flutter_root(f)
     }
 end
 
+# If this wasn't specified, assume it's two levels up from the directory of this script.
+flutter_application_path ||= File.join(__dir__, '..', '..')
 framework_dir = File.join(flutter_application_path, '.ios', 'Flutter')
 
 engine_dir = File.join(framework_dir, 'engine')
@@ -56,3 +58,18 @@ plugin_pods.map { |r|
     File.symlink(r[:path], symlink)
     pod r[:name], :path => File.join(symlink, 'ios')
 }
+
+# Ensure that ENABLE_BITCODE is set to NO, add a #include to Generated.xcconfig, and
+# add a run script to the Build Phases.
+post_install do |installer|
+    installer.pods_project.targets.each do |target|
+        target.build_configurations.each do |config|
+            config.build_settings['ENABLE_BITCODE'] = 'NO'
+            next if  config.base_configuration_reference == nil
+            xcconfig_path = config.base_configuration_reference.real_path
+            File.open(xcconfig_path, 'a+') do |file|
+                file.puts "#include \"#{File.realpath(File.join(framework_dir, 'Generated.xcconfig'))}\""
+            end
+        end
+    end
+end

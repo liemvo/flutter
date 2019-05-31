@@ -33,7 +33,7 @@ class EmulatorsCommand extends FlutterCommand {
   final List<String> aliases = <String>['emulator'];
 
   @override
-  Future<Null> runCommand() async {
+  Future<FlutterCommandResult> runCommand() async {
     if (doctor.workflows.every((Workflow w) => !w.canListEmulators)) {
       throwToolExit(
           'Unable to find any emulator sources. Please ensure you have some\n'
@@ -54,6 +54,8 @@ class EmulatorsCommand extends FlutterCommand {
               : null;
       await _listEmulators(searchText);
     }
+
+    return null;
   }
 
   Future<void> _launchEmulator(String id) async {
@@ -81,7 +83,7 @@ class EmulatorsCommand extends FlutterCommand {
     }
   }
 
-  Future<Null> _createEmulator({String name}) async {
+  Future<void> _createEmulator({ String name }) async {
     final CreateEmulatorResult createResult =
         await emulatorManager.createEmulator(name: name);
 
@@ -116,8 +118,10 @@ class EmulatorsCommand extends FlutterCommand {
     _printAdditionalInfo(showCreateInstruction: true, showRunInstruction: true);
   }
 
-  void _printAdditionalInfo({ bool showRunInstruction = false,
-      bool showCreateInstruction = false }) {
+  void _printAdditionalInfo({
+    bool showRunInstruction = false,
+    bool showCreateInstruction = false,
+  }) {
     printStatus('');
     if (showRunInstruction) {
       printStatus(
@@ -131,7 +135,7 @@ class EmulatorsCommand extends FlutterCommand {
     if (showRunInstruction || showCreateInstruction) {
       printStatus('');
     }
-    // TODO(dantup): Update this link to flutter.io if/when we have a better page.
+    // TODO(dantup): Update this link to flutter.dev if/when we have a better page.
     // That page can then link out to these places if required.
     printStatus('You can find more information on managing emulators at the links below:\n'
         '  https://developer.android.com/studio/run/managing-avds\n'

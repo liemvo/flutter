@@ -21,7 +21,7 @@ const double _kAppBarHeight = 128.0;
 const double _kFabHalfSize = 28.0; // TODO(mpcomplete): needs to adapt to screen size
 const double _kRecipePageMaxWidth = 500.0;
 
-final Set<Recipe> _favoriteRecipes = Set<Recipe>();
+final Set<Recipe> _favoriteRecipes = <Recipe>{};
 
 final ThemeData _kTheme = ThemeData(
   brightness: Brightness.light,
@@ -91,6 +91,7 @@ class _RecipeGridPageState extends State<RecipeGridPage> {
           },
         ),
         body: CustomScrollView(
+          semanticChildCount: widget.recipes.length,
           slivers: <Widget>[
             _buildAppBar(context, statusBarHeight),
             _buildBody(context, statusBarHeight),
@@ -128,7 +129,7 @@ class _RecipeGridPageState extends State<RecipeGridPage> {
               bottom: extraPadding,
             ),
             child: Center(
-              child: PestoLogo(height: logoHeight, t: t.clamp(0.0, 1.0))
+              child: PestoLogo(height: logoHeight, t: t.clamp(0.0, 1.0)),
             ),
           );
         },
@@ -142,7 +143,7 @@ class _RecipeGridPageState extends State<RecipeGridPage> {
       top: 8.0,
       left: 8.0 + mediaPadding.left,
       right: 8.0 + mediaPadding.right,
-      bottom: 8.0
+      bottom: 8.0,
     );
     return SliverPadding(
       padding: padding,
@@ -204,13 +205,13 @@ class _PestoLogoState extends State<PestoLogo> {
   static const double kTextHeight = 48.0;
   final TextStyle titleStyle = const PestoStyle(fontSize: kTextHeight, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 3.0);
   final RectTween _textRectTween = RectTween(
-    begin: Rect.fromLTWH(0.0, kLogoHeight, kLogoWidth, kTextHeight),
-    end: Rect.fromLTWH(0.0, kImageHeight, kLogoWidth, kTextHeight)
+    begin: const Rect.fromLTWH(0.0, kLogoHeight, kLogoWidth, kTextHeight),
+    end: const Rect.fromLTWH(0.0, kImageHeight, kLogoWidth, kTextHeight),
   );
   final Curve _textOpacity = const Interval(0.4, 1.0, curve: Curves.easeInOut);
   final RectTween _imageRectTween = RectTween(
-    begin: Rect.fromLTWH(0.0, 0.0, kLogoWidth, kLogoHeight),
-    end: Rect.fromLTWH(0.0, 0.0, kLogoWidth, kImageHeight),
+    begin: const Rect.fromLTWH(0.0, 0.0, kLogoWidth, kLogoHeight),
+    end: const Rect.fromLTWH(0.0, 0.0, kLogoWidth, kImageHeight),
   );
 
   @override
@@ -360,7 +361,7 @@ class _RecipePageState extends State<RecipePage> {
                 backgroundColor: Colors.transparent,
                 actions: <Widget>[
                   PopupMenuButton<String>(
-                    onSelected: (String item) {},
+                    onSelected: (String item) { },
                     itemBuilder: (BuildContext context) => <PopupMenuItem<String>>[
                       _buildMenuItem(Icons.share, 'Tweet recipe'),
                       _buildMenuItem(Icons.email, 'Email recipe'),
@@ -397,7 +398,7 @@ class _RecipePageState extends State<RecipePage> {
                       ),
                     ),
                   ],
-                )
+                ),
               ),
             ],
           ),
@@ -412,7 +413,7 @@ class _RecipePageState extends State<RecipePage> {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.only(right: 24.0),
-            child: Icon(icon, color: Colors.black54)
+            child: Icon(icon, color: Colors.black54),
           ),
           Text(label, style: menuItemStyle),
         ],
@@ -432,13 +433,13 @@ class _RecipePageState extends State<RecipePage> {
 
 /// Displays the recipe's name and instructions.
 class RecipeSheet extends StatelessWidget {
+  RecipeSheet({ Key key, this.recipe }) : super(key: key);
+
   final TextStyle titleStyle = const PestoStyle(fontSize: 34.0);
   final TextStyle descriptionStyle = const PestoStyle(fontSize: 15.0, color: Colors.black54, height: 24.0/15.0);
   final TextStyle itemStyle = const PestoStyle(fontSize: 15.0, height: 24.0/15.0);
   final TextStyle itemAmountStyle = PestoStyle(fontSize: 15.0, color: _kTheme.primaryColor, height: 24.0/15.0);
   final TextStyle headingStyle = const PestoStyle(fontSize: 16.0, fontWeight: FontWeight.bold, height: 24.0/15.0);
-
-  RecipeSheet({ Key key, this.recipe }) : super(key: key);
 
   final Recipe recipe;
 
@@ -452,7 +453,7 @@ class RecipeSheet extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 40.0),
           child: Table(
             columnWidths: const <int, TableColumnWidth>{
-              0: FixedColumnWidth(64.0)
+              0: FixedColumnWidth(64.0),
             },
             children: <TableRow>[
               TableRow(
@@ -465,12 +466,12 @@ class RecipeSheet extends StatelessWidget {
                       width: 32.0,
                       height: 32.0,
                       alignment: Alignment.centerLeft,
-                      fit: BoxFit.scaleDown
-                    )
+                      fit: BoxFit.scaleDown,
+                    ),
                   ),
                   TableCell(
                     verticalAlignment: TableCellVerticalAlignment.middle,
-                    child: Text(recipe.name, style: titleStyle)
+                    child: Text(recipe.name, style: titleStyle),
                   ),
                 ]
               ),
@@ -479,7 +480,7 @@ class RecipeSheet extends StatelessWidget {
                   const SizedBox(),
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0, bottom: 4.0),
-                    child: Text(recipe.description, style: descriptionStyle)
+                    child: Text(recipe.description, style: descriptionStyle),
                   ),
                 ]
               ),
@@ -488,7 +489,7 @@ class RecipeSheet extends StatelessWidget {
                   const SizedBox(),
                   Padding(
                     padding: const EdgeInsets.only(top: 24.0, bottom: 4.0),
-                    child: Text('Ingredients', style: headingStyle)
+                    child: Text('Ingredients', style: headingStyle),
                   ),
                 ]
               ),
@@ -502,7 +503,7 @@ class RecipeSheet extends StatelessWidget {
                   const SizedBox(),
                   Padding(
                     padding: const EdgeInsets.only(top: 24.0, bottom: 4.0),
-                    child: Text('Steps', style: headingStyle)
+                    child: Text('Steps', style: headingStyle),
                   ),
                 ]
               )
@@ -543,7 +544,7 @@ class Recipe {
     this.ingredientsImagePath,
     this.ingredientsImagePackage,
     this.ingredients,
-    this.steps
+    this.steps,
   });
 
   final String name;
@@ -688,7 +689,7 @@ const List<Recipe> kPestoRecipes = <Recipe>[
     steps: <RecipeStep>[
       RecipeStep(duration: '10 min', description: 'Prep vegetables'),
       RecipeStep(duration: '5 min', description: 'Stir'),
-      RecipeStep(duration: '1 hr 10 min', description: 'Cook')
+      RecipeStep(duration: '1 hr 10 min', description: 'Cook'),
     ],
   ),
   Recipe(
@@ -711,7 +712,7 @@ const List<Recipe> kPestoRecipes = <Recipe>[
       RecipeStep(duration: '5 min', description: 'Sauté vegetables'),
       RecipeStep(duration: '3 min', description: 'Stir vegetables and other filling ingredients'),
       RecipeStep(duration: '10 min', description: 'Fill phyllo squares half-full with filling and fold.'),
-      RecipeStep(duration: '40 min', description: 'Bake')
+      RecipeStep(duration: '40 min', description: 'Bake'),
     ],
   ),
 ];

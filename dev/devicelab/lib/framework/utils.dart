@@ -169,7 +169,7 @@ Future<String> getDartVersion() async {
 
 Future<String> getCurrentFlutterRepoCommit() {
   if (!dir('${flutterDirectory.path}/.git').existsSync()) {
-    return null;
+    return Future<String>.value(null);
   }
 
   return inDirectory<String>(flutterDirectory, () {
@@ -243,12 +243,12 @@ Future<Process> startProcess(
   return process;
 }
 
-Future<Null> forceQuitRunningProcesses() async {
+Future<void> forceQuitRunningProcesses() async {
   if (_runningProcesses.isEmpty)
     return;
 
   // Give normally quitting processes a chance to report their exit code.
-  await Future<Null>.delayed(const Duration(seconds: 1));
+  await Future<void>.delayed(const Duration(seconds: 1));
 
   // Whatever's left, kill it.
   for (ProcessInfo p in _runningProcesses) {
@@ -270,8 +270,8 @@ Future<int> exec(
 }) async {
   final Process process = await startProcess(executable, arguments, environment: environment, workingDirectory: workingDirectory);
 
-  final Completer<Null> stdoutDone = Completer<Null>();
-  final Completer<Null> stderrDone = Completer<Null>();
+  final Completer<void> stdoutDone = Completer<void>();
+  final Completer<void> stderrDone = Completer<void>();
   process.stdout
       .transform<String>(utf8.decoder)
       .transform<String>(const LineSplitter())
@@ -285,7 +285,7 @@ Future<int> exec(
         print('stderr: $line');
       }, onDone: () { stderrDone.complete(); });
 
-  await Future.wait<Null>(<Future<Null>>[stdoutDone.future, stderrDone.future]);
+  await Future.wait<void>(<Future<void>>[stdoutDone.future, stderrDone.future]);
   final int exitCode = await process.exitCode;
 
   if (exitCode != 0 && !canFail)
@@ -303,12 +303,13 @@ Future<String> eval(
   Map<String, String> environment,
   bool canFail = false, // as in, whether failures are ok. False means that they are fatal.
   String workingDirectory,
+  StringBuffer stderr, // if not null, the stderr will be written here
 }) async {
   final Process process = await startProcess(executable, arguments, environment: environment, workingDirectory: workingDirectory);
 
   final StringBuffer output = StringBuffer();
-  final Completer<Null> stdoutDone = Completer<Null>();
-  final Completer<Null> stderrDone = Completer<Null>();
+  final Completer<void> stdoutDone = Completer<void>();
+  final Completer<void> stderrDone = Completer<void>();
   process.stdout
       .transform<String>(utf8.decoder)
       .transform<String>(const LineSplitter())
@@ -321,9 +322,10 @@ Future<String> eval(
       .transform<String>(const LineSplitter())
       .listen((String line) {
         print('stderr: $line');
+        stderr?.writeln(line);
       }, onDone: () { stderrDone.complete(); });
 
-  await Future.wait<Null>(<Future<Null>>[stdoutDone.future, stderrDone.future]);
+  await Future.wait<void>(<Future<void>>[stdoutDone.future, stderrDone.future]);
   final int exitCode = await process.exitCode;
 
   if (exitCode != 0 && !canFail)
@@ -347,10 +349,11 @@ Future<String> evalFlutter(String command, {
   List<String> options = const <String>[],
   bool canFail = false, // as in, whether failures are ok. False means that they are fatal.
   Map<String, String> environment,
+  StringBuffer stderr, // if not null, the stderr will be written here.
 }) {
   final List<String> args = <String>[command]..addAll(options);
   return eval(path.join(flutterDirectory.path, 'bin', 'flutter'), args,
-      canFail: canFail, environment: environment);
+      canFail: canFail, environment: environment, stderr: stderr);
 }
 
 String get dartBin =>
@@ -420,7 +423,7 @@ String jsonEncode(dynamic data) {
   return const JsonEncoder.withIndent('  ').convert(data) + '\n';
 }
 
-Future<Null> getFlutter(String revision) async {
+Future<void> getFlutter(String revision) async {
   section('Get Flutter!');
 
   if (exists(flutterDirectory)) {
@@ -495,8 +498,8 @@ Iterable<String> grep(Pattern pattern, {@required String from}) {
 ///     } catch (error, chain) {
 ///
 ///     }
-Future<Null> runAndCaptureAsyncStacks(Future<Null> callback()) {
-  final Completer<Null> completer = Completer<Null>();
+Future<void> runAndCaptureAsyncStacks(Future<void> callback()) {
+  final Completer<void> completer = Completer<void>();
   Chain.capture(() async {
     await callback();
     completer.complete();
@@ -526,19 +529,45 @@ String extractCloudAuthTokenArg(List<String> rawArgs) {
   return token;
 }
 
+final RegExp _obsRegExp =
+  RegExp('An Observatory debugger .* is available at: ');
+final RegExp _obsPortRegExp = RegExp('(\\S+:(\\d+)/\\S*)\$');
+final RegExp _obsUriRegExp = RegExp('((http|\/\/)[a-zA-Z0-9:/=_\\-\.\\[\\]]+)');
+
 /// Tries to extract a port from the string.
 ///
 /// The `prefix`, if specified, is a regular expression pattern and must not contain groups.
-///
-/// The `multiLine` flag should be set to true if `line` is actually a buffer of many lines.
+/// `prefix` defaults to the RegExp: `An Observatory debugger .* is available at: `.
 int parseServicePort(String line, {
-  String prefix = 'An Observatory debugger .* is available at: ',
-  bool multiLine = false,
+  Pattern prefix,
 }) {
-  // e.g. "An Observatory debugger and profiler on ... is available at: http://127.0.0.1:8100/"
-  final RegExp pattern = RegExp('$prefix(\\S+:(\\d+)/\\S*)\$', multiLine: multiLine);
-  final Match match = pattern.firstMatch(line);
-  return match == null ? null : int.parse(match.group(2));
+  prefix ??= _obsRegExp;
+  final Iterable<Match> matchesIter = prefix.allMatches(line);
+  if (matchesIter.isEmpty) {
+    return null;
+  }
+  final Match prefixMatch = matchesIter.first;
+  final List<Match> matches =
+    _obsPortRegExp.allMatches(line, prefixMatch.end).toList();
+  return matches.isEmpty ? null : int.parse(matches[0].group(2));
+}
+
+/// Tries to extract a Uri from the string.
+///
+/// The `prefix`, if specified, is a regular expression pattern and must not contain groups.
+/// `prefix` defaults to the RegExp: `An Observatory debugger .* is available at: `.
+Uri parseServiceUri(String line, {
+  Pattern prefix,
+}) {
+  prefix ??= _obsRegExp;
+  final Iterable<Match> matchesIter = prefix.allMatches(line);
+  if (matchesIter.isEmpty) {
+    return null;
+  }
+  final Match prefixMatch = matchesIter.first;
+  final List<Match> matches =
+    _obsUriRegExp.allMatches(line, prefixMatch.end).toList();
+  return matches.isEmpty ? null : Uri.parse(matches[0].group(0));
 }
 
 /// If FLUTTER_ENGINE environment variable is set then we need to pass

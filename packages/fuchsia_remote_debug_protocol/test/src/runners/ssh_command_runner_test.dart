@@ -21,8 +21,7 @@ void main() {
       expect(newCommandRunner, throwsArgumentError);
     });
 
-    test('throws exception from injection constructor with invalid addr',
-        () async {
+    test('throws exception from injection constructor with invalid addr', () async {
       SshCommandRunner newCommandRunner() {
         return SshCommandRunner.withProcessManager(
             const LocalProcessManager(),
@@ -62,8 +61,7 @@ void main() {
       expect(passedCommand, contains('$ipV6Addr%$interface'));
     });
 
-    test('verify no percentage symbol is added when no ipv6 interface',
-        () async {
+    test('verify no percentage symbol is added when no ipv6 interface', () async {
       const String ipV6Addr = 'fe80::8eae:4cff:fef4:9247';
       runner = SshCommandRunner.withProcessManager(
         mockProcessManager,
@@ -96,7 +94,7 @@ void main() {
           address: addr);
       when<String>(mockProcessResult.stdout).thenReturn('whatever');
       when(mockProcessResult.exitCode).thenReturn(1);
-      Future<Null> failingFunction() async {
+      Future<void> failingFunction() async {
         await runner.run('oihaw');
       }
 

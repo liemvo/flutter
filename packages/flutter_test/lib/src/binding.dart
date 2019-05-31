@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -13,9 +14,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart' show TestWindow;
 import 'package:quiver/testing/async.dart';
 import 'package:quiver/time.dart';
-import 'package:test/test.dart' as test_package;
+import 'package:path/path.dart' as path;
+import 'package:test_api/test_api.dart' as test_package;
 import 'package:stack_trace/stack_trace.dart' as stack_trace;
 import 'package:vector_math/vector_math_64.dart';
 
@@ -84,11 +87,11 @@ const Size _kDefaultTestViewportSize = Size(800.0, 600.0);
 /// When using these bindings, certain features are disabled. For
 /// example, [timeDilation] is reset to 1.0 on initialization.
 abstract class TestWidgetsFlutterBinding extends BindingBase
-  with SchedulerBinding,
+  with ServicesBinding,
+       SchedulerBinding,
        GestureBinding,
        SemanticsBinding,
        RendererBinding,
-       ServicesBinding,
        PaintingBinding,
        WidgetsBinding {
 
@@ -96,11 +99,15 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   ///
   /// This constructor overrides the [debugPrint] global hook to point to
   /// [debugPrintOverride], which can be overridden by subclasses.
-  TestWidgetsFlutterBinding() {
+  TestWidgetsFlutterBinding() : _window = TestWindow(window: ui.window) {
     debugPrint = debugPrintOverride;
     debugDisableShadows = disableShadows;
     debugCheckIntrinsicSizes = checkIntrinsicSizes;
   }
+
+  @override
+  TestWindow get window => _window;
+  final TestWindow _window;
 
   /// The value to set [debugPrint] to while tests are running.
   ///
@@ -119,6 +126,11 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   /// always run with shadows disabled.
   @protected
   bool get disableShadows => false;
+
+  /// Increase the timeout for the current test by the given duration.
+  void addTime(Duration duration) {
+    // Noop, see [AutomatedTestWidgetsFlutterBinding. addTime] for an actual implementation.
+  }
 
   /// The value to set [debugCheckIntrinsicSizes] to while tests are running.
   ///
@@ -158,6 +170,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   }
 
   @override
+  // ignore: MUST_CALL_SUPER
   void initLicenses() {
     // Do not include any licenses, because we're a test, and the LICENSE file
     // doesn't get generated for tests.
@@ -197,7 +210,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   ///
   /// See also [LiveTestWidgetsFlutterBindingFramePolicy], which affects how
   /// this method works when the test is run with `flutter run`.
-  Future<Null> pump([ Duration duration, EnginePhase newPhase = EnginePhase.sendSemanticsUpdate ]);
+  Future<void> pump([ Duration duration, EnginePhase newPhase = EnginePhase.sendSemanticsUpdate ]);
 
   /// Runs a `callback` that performs real asynchronous work.
   ///
@@ -221,19 +234,37 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   /// [AutomatedTestWidgetsFlutterBinding] implementation to increase the
   /// current timeout. See [AutomatedTestWidgetsFlutterBinding.addTime] for
   /// details. The value is ignored by the [LiveTestWidgetsFlutterBinding].
-  Future<T> runAsync<T>(Future<T> callback(), {
-    Duration additionalTime = const Duration(milliseconds: 250),
+  Future<T> runAsync<T>(
+    Future<T> callback(), {
+    Duration additionalTime = const Duration(milliseconds: 1000),
   });
 
-  /// Artificially calls dispatchLocaleChanged on the Widget binding,
+  /// Artificially calls dispatchLocalesChanged on the Widget binding,
   /// then flushes microtasks.
-  Future<Null> setLocale(String languageCode, String countryCode) {
-    return TestAsyncUtils.guard<Null>(() async {
+  ///
+  /// Passes only one single Locale. Use [setLocales] to pass a full preferred
+  /// locales list.
+  Future<void> setLocale(String languageCode, String countryCode) {
+    return TestAsyncUtils.guard<void>(() async {
       assert(inTest);
-      final Locale locale = Locale(languageCode, countryCode);
-      dispatchLocaleChanged(locale);
-      return null;
+      final Locale locale = Locale(languageCode, countryCode == '' ? null : countryCode);
+      dispatchLocalesChanged(<Locale>[locale]);
     });
+  }
+
+  /// Artificially calls dispatchLocalesChanged on the Widget binding,
+  /// then flushes microtasks.
+  Future<void> setLocales(List<Locale> locales) {
+    return TestAsyncUtils.guard<void>(() async {
+      assert(inTest);
+      dispatchLocalesChanged(locales);
+    });
+  }
+
+  /// Re-attempts the initialization of the lifecycle state after providing
+  /// test values in [TestWindow.initialLifecycleStateTestValue].
+  void readTestInitialLifecycleStateFromNativeWindow() {
+    readInitialLifecycleStateFromNativeWindow();
   }
 
   Size _surfaceSize;
@@ -242,21 +273,20 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   /// then flushes microtasks.
   ///
   /// Set to null to use the default surface size.
-  Future<Null> setSurfaceSize(Size size) {
-    return TestAsyncUtils.guard<Null>(() async {
+  Future<void> setSurfaceSize(Size size) {
+    return TestAsyncUtils.guard<void>(() async {
       assert(inTest);
       if (_surfaceSize == size)
-        return null;
+        return;
       _surfaceSize = size;
       handleMetricsChanged();
-      return null;
     });
   }
 
   @override
   ViewConfiguration createViewConfiguration() {
-    final double devicePixelRatio = ui.window.devicePixelRatio;
-    final Size size = _surfaceSize ?? ui.window.physicalSize / devicePixelRatio;
+    final double devicePixelRatio = window.devicePixelRatio;
+    final Size size = _surfaceSize ?? window.physicalSize / devicePixelRatio;
     return ViewConfiguration(
       size: size,
       devicePixelRatio: devicePixelRatio,
@@ -272,11 +302,11 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   /// May result in an infinite loop or run out of memory if microtasks continue
   /// to recursively schedule new microtasks. Will not run any timers scheduled
   /// after this method was invoked, even if they are zero-time timers.
-  Future<Null> idle() {
-    return TestAsyncUtils.guard<Null>(() {
-      final Completer<Null> completer = Completer<Null>();
+  Future<void> idle() {
+    return TestAsyncUtils.guard<void>(() {
+      final Completer<void> completer = Completer<void>();
       Timer.run(() {
-        completer.complete(null);
+        completer.complete();
       });
       return completer.future;
     });
@@ -293,11 +323,13 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   Offset localToGlobal(Offset point) => point;
 
   @override
-  void dispatchEvent(PointerEvent event, HitTestResult result, {
-    TestBindingEventSource source = TestBindingEventSource.device
+  void dispatchEvent(
+    PointerEvent event,
+    HitTestResult hitTestResult, {
+    TestBindingEventSource source = TestBindingEventSource.device,
   }) {
     assert(source == TestBindingEventSource.test);
-    super.dispatchEvent(event, result);
+    super.dispatchEvent(event, hitTestResult);
   }
 
   /// A stub for the system's onscreen keyboard. Callers must set the
@@ -357,7 +389,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
       'Test starting...',
       style: _messageStyle,
       textDirection: TextDirection.ltr,
-    )
+    ),
   );
 
   static const Widget _postTestMessage = Center(
@@ -365,7 +397,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
       'Test finished.',
       style: _messageStyle,
       textDirection: TextDirection.ltr,
-    )
+    ),
   );
 
   /// Whether to include the output of debugDumpApp() when reporting
@@ -386,7 +418,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
   /// The `description` is used by the [LiveTestWidgetsFlutterBinding] to
   /// show a label on the screen during the test. The description comes from
   /// the value passed to [testWidgets]. It must not be null.
-  Future<Null> runTest(Future<Null> testBody(), VoidCallback invariantTester, { String description = '' });
+  Future<void> runTest(Future<void> testBody(), VoidCallback invariantTester, { String description = '' });
 
   /// This is called during test execution before and after the body has been
   /// executed.
@@ -399,7 +431,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
 
   Zone _parentZone;
 
-  VoidCallback _createTestCompletionHandler(String testDescription, Completer<Null> completer) {
+  VoidCallback _createTestCompletionHandler(String testDescription, Completer<void> completer) {
     return () {
       // This can get called twice, in the case of a Future without listeners failing, and then
       // our main future completing.
@@ -410,7 +442,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
         _pendingExceptionDetails = null;
       }
       if (!completer.isCompleted)
-        completer.complete(null);
+        completer.complete();
     };
   }
 
@@ -426,8 +458,11 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
     // The LiveTestWidgetsFlutterBinding overrides this to report the exception to the console.
   }
 
-  Future<Null> _runTest(Future<Null> testBody(), VoidCallback invariantTester, String description, {
-    Future<Null> timeout,
+  Future<void> _runTest(
+    Future<void> testBody(),
+    VoidCallback invariantTester,
+    String description, {
+    Future<void> timeout,
   }) {
     assert(description != null);
     assert(inTest);
@@ -445,14 +480,14 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
         FlutterError.dumpErrorToConsole(details, forceReport: true);
         _pendingExceptionDetails = FlutterErrorDetails(
           exception: 'Multiple exceptions ($_exceptionCount) were detected during the running of the current test, and at least one was unexpected.',
-          library: 'Flutter test framework'
+          library: 'Flutter test framework',
         );
       } else {
         reportExceptionNoticed(details); // mostly this is just a hook for the LiveTestWidgetsFlutterBinding
         _pendingExceptionDetails = details;
       }
     };
-    final Completer<Null> testCompleter = Completer<Null>();
+    final Completer<void> testCompleter = Completer<void>();
     final VoidCallback testCompletionHandler = _createTestCompletionHandler(description, testCompleter);
     void handleUncaughtError(dynamic exception, StackTrace stack) {
       if (testCompleter.isCompleted) {
@@ -466,8 +501,8 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
         FlutterError.dumpErrorToConsole(FlutterErrorDetails(
           exception: exception,
           stack: _unmangle(stack),
-          context: 'running a test (but after the test had completed)',
-          library: 'Flutter test framework'
+          context: ErrorDescription('running a test (but after the test had completed)'),
+          library: 'Flutter test framework',
         ), forceReport: true);
         return;
       }
@@ -499,32 +534,34 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
       // _this_ zone, the test framework would find this zone was the current
       // zone and helpfully throw the error in this zone, causing us to be
       // directly called again.
-      String treeDump;
+      DiagnosticsNode treeDump;
       try {
-        treeDump = renderViewElement?.toStringDeep() ?? '<no tree>';
+        treeDump = renderViewElement?.toDiagnosticsNode() ?? DiagnosticsNode.message('<no tree>');
+        // TODO(jacobr): this is a hack to make sure the tree can safely be fully dumped.
+        // Potentially everything is good enough without this case.
+        treeDump.toStringDeep();
       } catch (exception) {
-        treeDump = '<additional error caught while dumping tree: $exception>';
+        treeDump = DiagnosticsNode.message('<additional error caught while dumping tree: $exception>', level: DiagnosticLevel.error);
       }
-      final StringBuffer expectLine = StringBuffer();
-      final int stackLinesToOmit = reportExpectCall(stack, expectLine);
+      final List<DiagnosticsNode> omittedFrames = <DiagnosticsNode>[];
+      final int stackLinesToOmit = reportExpectCall(stack, omittedFrames);
       FlutterError.reportError(FlutterErrorDetails(
         exception: exception,
         stack: _unmangle(stack),
-        context: 'running a test',
+        context: ErrorDescription('running a test'),
         library: 'Flutter test framework',
         stackFilter: (Iterable<String> frames) {
           return FlutterError.defaultStackFilter(frames.skip(stackLinesToOmit));
         },
-        informationCollector: (StringBuffer information) {
+        informationCollector: () sync* {
           if (stackLinesToOmit > 0)
-            information.writeln(expectLine.toString());
+            yield* omittedFrames;
           if (showAppDumpInErrors) {
-            information.writeln('At the time of the failure, the widget tree looked as follows:');
-            information.writeln('# ${treeDump.split("\n").takeWhile((String s) => s != "").join("\n# ")}');
+            yield DiagnosticsProperty<DiagnosticsNode>('At the time of the failure, the widget tree looked as follows', treeDump, linePrefix: '# ', style: DiagnosticsTreeStyle.flat);
           }
           if (description.isNotEmpty)
-            information.writeln('The test description was:\n$description');
-        }
+            yield DiagnosticsProperty<String>('The test description was', description, style: DiagnosticsTreeStyle.errorProperty);
+        },
       ));
       assert(_parentZone != null);
       assert(_pendingExceptionDetails != null, 'A test overrode FlutterError.onError but either failed to return it to its original state, or had unexpected additional errors that it could not handle. Typically, this is caused by using expect() before restoring FlutterError.onError.');
@@ -537,13 +574,13 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
     );
     _parentZone = Zone.current;
     final Zone testZone = _parentZone.fork(specification: errorHandlingZoneSpecification);
-    testZone.runBinary<Future<Null>, Future<Null> Function(), VoidCallback>(_runTestBody, testBody, invariantTester)
+    testZone.runBinary<Future<void>, Future<void> Function(), VoidCallback>(_runTestBody, testBody, invariantTester)
       .whenComplete(testCompletionHandler);
     timeout?.catchError(handleUncaughtError);
     return testCompleter.future;
   }
 
-  Future<Null> _runTestBody(Future<Null> testBody(), VoidCallback invariantTester) async {
+  Future<void> _runTestBody(Future<void> testBody(), VoidCallback invariantTester) async {
     assert(inTest);
 
     runApp(Container(key: UniqueKey(), child: _preTestMessage)); // Reset the tree to a known state.
@@ -551,6 +588,7 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
 
     final bool autoUpdateGoldensBeforeTest = autoUpdateGoldenFiles;
     final TestExceptionReporter reportTestExceptionBeforeTest = reportTestException;
+    final ErrorWidgetBuilder errorWidgetBuilderBeforeTest = ErrorWidget.builder;
 
     // run the test
     await testBody();
@@ -565,12 +603,12 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
       invariantTester();
       _verifyAutoUpdateGoldensUnset(autoUpdateGoldensBeforeTest);
       _verifyReportTestExceptionUnset(reportTestExceptionBeforeTest);
+      _verifyErrorWidgetBuilderUnset(errorWidgetBuilderBeforeTest);
       _verifyInvariants();
     }
 
     assert(inTest);
     asyncBarrier(); // When using AutomatedTestWidgetsFlutterBinding, this flushes the microtasks.
-    return null;
   }
 
   void _verifyInvariants() {
@@ -635,12 +673,32 @@ abstract class TestWidgetsFlutterBinding extends BindingBase
     }());
   }
 
+  void _verifyErrorWidgetBuilderUnset(ErrorWidgetBuilder valueBeforeTest) {
+    assert(() {
+      if (ErrorWidget.builder != valueBeforeTest) {
+        FlutterError.reportError(FlutterErrorDetails(
+          exception: FlutterError(
+              'The value of ErrorWidget.builder was changed by the test.',
+          ),
+          stack: StackTrace.current,
+          library: 'Flutter test framework',
+        ));
+      }
+      return true;
+    }());
+  }
+
   /// Called by the [testWidgets] function after a test is executed.
   void postTest() {
     assert(inTest);
     FlutterError.onError = _oldExceptionHandler;
     _pendingExceptionDetails = null;
     _parentZone = null;
+    buildOwner.focusManager = FocusManager();
+    assert(!RendererBinding.instance.mouseTracker.mouseIsConnected,
+        'The MouseTracker thinks that there is still a mouse connected, which indicates that a '
+        'test has not removed the mouse pointer which it added. Call removePointer on the '
+        'active mouse gesture to remove the mouse pointer.');
   }
 }
 
@@ -656,8 +714,9 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   @override
   void initInstances() {
     super.initInstances();
-    ui.window.onBeginFrame = null;
-    ui.window.onDrawFrame = null;
+    window.onBeginFrame = null;
+    window.onDrawFrame = null;
+    _mockFlutterAssets();
   }
 
   FakeAsync _currentFakeAsync; // set in runTest; cleared in postTest
@@ -687,9 +746,55 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   @override
   int get microtaskCount => _currentFakeAsync.microtaskCount;
 
+  /// A whitelist [Set] that is used in mocking the asset message channel.
+  static Set<String> _allowedAssetKeys;
+
+  void _mockFlutterAssets() {
+    if (!Platform.environment.containsKey('UNIT_TEST_ASSETS')) {
+      return;
+    }
+    final String assetFolderPath = Platform.environment['UNIT_TEST_ASSETS'];
+    _ensureInitialized(assetFolderPath);
+
+    if (_allowedAssetKeys.isNotEmpty) {
+      defaultBinaryMessenger.setMockMessageHandler('flutter/assets', (ByteData message) {
+        final String key = utf8.decode(message.buffer.asUint8List());
+        if (_allowedAssetKeys.contains(key)) {
+          final File asset = File(path.join(assetFolderPath, key));
+          final Uint8List encoded = Uint8List.fromList(asset.readAsBytesSync());
+          return Future<ByteData>.value(encoded.buffer.asByteData());
+        }
+        return null;
+      });
+    }
+  }
+
+  void _ensureInitialized(String assetFolderPath) {
+    if (_allowedAssetKeys != null) {
+      return;
+    }
+    final File manifestFile = File(
+        path.join(assetFolderPath, 'AssetManifest.json'));
+    // If the file does not exist, it means there is no asset declared in
+    // the project.
+    if (!manifestFile.existsSync()) {
+      _allowedAssetKeys = <String>{};
+      return;
+    }
+    final Map<String, dynamic> manifest = json.decode(
+        manifestFile.readAsStringSync());
+    _allowedAssetKeys = <String>{
+      'AssetManifest.json',
+    };
+    for (List<dynamic> value in manifest.values) {
+      final List<String> strList = List<String>.from(value);
+      _allowedAssetKeys.addAll(strList);
+    }
+  }
+
   @override
-  Future<Null> pump([ Duration duration, EnginePhase newPhase = EnginePhase.sendSemanticsUpdate ]) {
-    return TestAsyncUtils.guard<Null>(() {
+  Future<void> pump([ Duration duration, EnginePhase newPhase = EnginePhase.sendSemanticsUpdate ]) {
+    return TestAsyncUtils.guard<void>(() {
       assert(inTest);
       assert(_clock != null);
       if (duration != null)
@@ -705,12 +810,13 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
         handleDrawFrame();
       }
       _currentFakeAsync.flushMicrotasks();
-      return Future<Null>.value();
+      return Future<void>.value();
     });
   }
 
   @override
-  Future<T> runAsync<T>(Future<T> callback(), {
+  Future<T> runAsync<T>(
+    Future<T> callback(), {
     Duration additionalTime = const Duration(milliseconds: 1000),
   }) {
     assert(additionalTime != null);
@@ -748,7 +854,7 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
           exception: exception,
           stack: stack,
           library: 'Flutter test framework',
-          context: 'while running async test code',
+          context: ErrorDescription('while running async test code'),
         ));
         return null;
       }).whenComplete(() {
@@ -774,9 +880,9 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   }
 
   @override
-  Future<Null> idle() {
-    final Future<Null> result = super.idle();
-    _currentFakeAsync.elapse(const Duration());
+  Future<void> idle() {
+    final Future<void> result = super.idle();
+    _currentFakeAsync.elapse(Duration.zero);
     return result;
   }
 
@@ -816,7 +922,7 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   Duration _timeout;
   Stopwatch _timeoutStopwatch;
   Timer _timeoutTimer;
-  Completer<Null> _timeoutCompleter;
+  Completer<void> _timeoutCompleter;
 
   void _checkTimeout(Timer timer) {
     assert(_timeoutTimer == timer);
@@ -824,7 +930,7 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
       _timeoutCompleter.completeError(
         TimeoutException(
           'The test exceeded the timeout. It may have hung.\n'
-          'Consider using "addTime" to increase the timeout before expensive operations.',
+          'Consider using "tester.binding.addTime" to increase the timeout before expensive operations.',
           _timeout,
         ),
       );
@@ -854,13 +960,16 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   ///
   ///  * [defaultTestTimeout], the maximum that the timeout can reach.
   ///    (That timeout is implemented by the test package.)
+  @override
   void addTime(Duration duration) {
     assert(_timeout != null, 'addTime can only be called during a test.');
     _timeout += duration;
   }
 
   @override
-  Future<Null> runTest(Future<Null> testBody(), VoidCallback invariantTester, {
+  Future<void> runTest(
+    Future<void> testBody(),
+    VoidCallback invariantTester, {
     String description = '',
     Duration timeout = const Duration(seconds: 2),
   }) {
@@ -872,12 +981,12 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
     _timeout = timeout;
     _timeoutStopwatch = Stopwatch()..start();
     _timeoutTimer = Timer.periodic(const Duration(seconds: 1), _checkTimeout);
-    _timeoutCompleter = Completer<Null>();
+    _timeoutCompleter = Completer<void>();
 
     final FakeAsync fakeAsync = FakeAsync();
     _currentFakeAsync = fakeAsync; // reset in postTest
     _clock = fakeAsync.getClock(DateTime.utc(2015, 1, 1));
-    Future<Null> testBodyResult;
+    Future<void> testBodyResult;
     fakeAsync.run((FakeAsync localFakeAsync) {
       assert(fakeAsync == _currentFakeAsync);
       assert(fakeAsync == localFakeAsync);
@@ -885,14 +994,14 @@ class AutomatedTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
       assert(inTest);
     });
 
-    return Future<Null>.microtask(() async {
+    return Future<void>.microtask(() async {
       // testBodyResult is a Future that was created in the Zone of the
       // fakeAsync. This means that if we await it here, it will register a
       // microtask to handle the future _in the fake async zone_. We avoid this
       // by calling '.then' in the current zone. While flushing the microtasks
       // of the fake-zone below, the new future will be completed and can then
       // be used without fakeAsync.
-      final Future<Null> resultFuture = testBodyResult.then<Null>((_) {
+      final Future<void> resultFuture = testBodyResult.then<void>((_) {
         // Do nothing.
       });
 
@@ -976,7 +1085,8 @@ enum LiveTestWidgetsFlutterBindingFramePolicy {
   /// This is intended to be used by benchmarks (hence the name) that drive the
   /// pipeline directly. It tells the binding to entirely ignore requests for a
   /// frame to be scheduled, while still allowing frames that are pumped
-  /// directly (invoking [Window.onBeginFrame] and [Window.onDrawFrame]) to run.
+  /// directly to run (either by using [WidgetTester.pumpBenchmark] or invoking
+  /// [Window.onBeginFrame] and [Window.onDrawFrame]).
   ///
   /// The [SchedulerBinding.hasScheduledFrame] property will never be true in
   /// this mode. This can cause unexpected effects. For instance,
@@ -1016,12 +1126,6 @@ enum LiveTestWidgetsFlutterBindingFramePolicy {
 /// anyway.)
 class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   @override
-  void initInstances() {
-    super.initInstances();
-    assert(!autoUpdateGoldenFiles);
-  }
-
-  @override
   bool get inTest => _inTest;
   bool _inTest = false;
 
@@ -1038,7 +1142,7 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   @override
   test_package.Timeout get defaultTestTimeout => test_package.Timeout.none;
 
-  Completer<Null> _pendingFrame;
+  Completer<void> _pendingFrame;
   bool _expectingFrame = false;
   bool _viewNeedsPaint = false;
   bool _runningAsyncTasks = false;
@@ -1134,9 +1238,8 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
       _pendingFrame.complete(); // unlocks the test API
       _pendingFrame = null;
       _expectingFrame = false;
-    } else {
-      assert(framePolicy != LiveTestWidgetsFlutterBindingFramePolicy.benchmark);
-      ui.window.scheduleFrame();
+    } else if (framePolicy != LiveTestWidgetsFlutterBindingFramePolicy.benchmark) {
+      window.scheduleFrame();
     }
   }
 
@@ -1146,6 +1249,7 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
     renderView = _LiveTestRenderView(
       configuration: createViewConfiguration(),
       onNeedPaint: _handleViewNeedsPaint,
+      window: window,
     );
     renderView.scheduleInitialFrame();
   }
@@ -1168,8 +1272,10 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   HitTestDispatcher deviceEventDispatcher;
 
   @override
-  void dispatchEvent(PointerEvent event, HitTestResult result, {
-    TestBindingEventSource source = TestBindingEventSource.device
+  void dispatchEvent(
+    PointerEvent event,
+    HitTestResult hitTestResult, {
+    TestBindingEventSource source = TestBindingEventSource.device,
   }) {
     switch (source) {
       case TestBindingEventSource.test:
@@ -1182,22 +1288,22 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
             renderView._pointers[event.pointer].decay = _kPointerDecay;
         }
         _handleViewNeedsPaint();
-        super.dispatchEvent(event, result, source: source);
+        super.dispatchEvent(event, hitTestResult, source: source);
         break;
       case TestBindingEventSource.device:
         if (deviceEventDispatcher != null)
-          deviceEventDispatcher.dispatchEvent(event, result);
+          deviceEventDispatcher.dispatchEvent(event, hitTestResult);
         break;
     }
   }
 
   @override
-  Future<Null> pump([ Duration duration, EnginePhase newPhase = EnginePhase.sendSemanticsUpdate ]) {
+  Future<void> pump([ Duration duration, EnginePhase newPhase = EnginePhase.sendSemanticsUpdate ]) {
     assert(newPhase == EnginePhase.sendSemanticsUpdate);
     assert(inTest);
     assert(!_expectingFrame);
     assert(_pendingFrame == null);
-    return TestAsyncUtils.guard<Null>(() {
+    return TestAsyncUtils.guard<void>(() {
       if (duration != null) {
         Timer(duration, () {
           _expectingFrame = true;
@@ -1207,14 +1313,15 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
         _expectingFrame = true;
         scheduleFrame();
       }
-      _pendingFrame = Completer<Null>();
+      _pendingFrame = Completer<void>();
       return _pendingFrame.future;
     });
   }
 
   @override
-  Future<T> runAsync<T>(Future<T> callback(), {
-    Duration additionalTime = const Duration(milliseconds: 250),
+  Future<T> runAsync<T>(
+    Future<T> callback(), {
+    Duration additionalTime = const Duration(milliseconds: 1000),
   }) async {
     assert(() {
       if (!_runningAsyncTasks)
@@ -1235,7 +1342,7 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
         exception: error,
         stack: stack,
         library: 'Flutter test framework',
-        context: 'while running async test code',
+        context: ErrorSummary('while running async test code'),
       ));
       return null;
     } finally {
@@ -1244,7 +1351,7 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
   }
 
   @override
-  Future<Null> runTest(Future<Null> testBody(), VoidCallback invariantTester, { String description = '' }) async {
+  Future<void> runTest(Future<void> testBody(), VoidCallback invariantTester, { String description = '' }) async {
     assert(description != null);
     assert(!inTest);
     _inTest = true;
@@ -1277,7 +1384,10 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
 
   @override
   ViewConfiguration createViewConfiguration() {
-    return TestViewConfiguration(size: _surfaceSize ?? _kDefaultTestViewportSize);
+    return TestViewConfiguration(
+      size: _surfaceSize ?? _kDefaultTestViewportSize,
+      window: window,
+    );
   }
 
   @override
@@ -1301,15 +1411,24 @@ class LiveTestWidgetsFlutterBinding extends TestWidgetsFlutterBinding {
 /// size onto the actual display using the [BoxFit.contain] algorithm.
 class TestViewConfiguration extends ViewConfiguration {
   /// Creates a [TestViewConfiguration] with the given size. Defaults to 800x600.
-  TestViewConfiguration({ Size size = _kDefaultTestViewportSize })
-    : _paintMatrix = _getMatrix(size, ui.window.devicePixelRatio),
-      _hitTestMatrix = _getMatrix(size, 1.0),
+  ///
+  /// If a [window] instance is not provided it defaults to [ui.window].
+  factory TestViewConfiguration({
+    Size size = _kDefaultTestViewportSize,
+    ui.Window window,
+  }) {
+    return TestViewConfiguration._(size, window ?? ui.window);
+  }
+
+  TestViewConfiguration._(Size size, ui.Window window)
+    : _paintMatrix = _getMatrix(size, window.devicePixelRatio, window),
+      _hitTestMatrix = _getMatrix(size, 1.0, window),
       super(size: size);
 
-  static Matrix4 _getMatrix(Size size, double devicePixelRatio) {
-    final double inverseRatio = devicePixelRatio / ui.window.devicePixelRatio;
-    final double actualWidth = ui.window.physicalSize.width * inverseRatio;
-    final double actualHeight = ui.window.physicalSize.height * inverseRatio;
+  static Matrix4 _getMatrix(Size size, double devicePixelRatio, ui.Window window) {
+    final double inverseRatio = devicePixelRatio / window.devicePixelRatio;
+    final double actualWidth = window.physicalSize.width * inverseRatio;
+    final double actualHeight = window.physicalSize.height * inverseRatio;
     final double desiredWidth = size.width;
     final double desiredHeight = size.height;
     double scale, shiftX, shiftY;
@@ -1325,7 +1444,7 @@ class TestViewConfiguration extends ViewConfiguration {
     final Matrix4 matrix = Matrix4.compose(
       Vector3(shiftX, shiftY, 0.0), // translation
       Quaternion.identity(), // rotation
-      Vector3(scale, scale, 1.0) // scale
+      Vector3(scale, scale, 1.0), // scale
     );
     return matrix;
   }
@@ -1355,7 +1474,7 @@ const int _kPointerDecay = -2;
 class _LiveTestPointerRecord {
   _LiveTestPointerRecord(
     this.pointer,
-    this.position
+    this.position,
   ) : color = HSVColor.fromAHSV(0.8, (35.0 * pointer) % 360.0, 1.0, 1.0).toColor(),
       decay = 1;
   final int pointer;
@@ -1368,7 +1487,8 @@ class _LiveTestRenderView extends RenderView {
   _LiveTestRenderView({
     ViewConfiguration configuration,
     this.onNeedPaint,
-  }) : super(configuration: configuration);
+    @required ui.Window window,
+  }) : super(configuration: configuration, window: window);
 
   @override
   TestViewConfiguration get configuration => super.configuration;
@@ -1481,22 +1601,22 @@ class _MockHttpClient implements HttpClient {
   String userAgent;
 
   @override
-  void addCredentials(Uri url, String realm, HttpClientCredentials credentials) {}
+  void addCredentials(Uri url, String realm, HttpClientCredentials credentials) { }
 
   @override
-  void addProxyCredentials(String host, int port, String realm, HttpClientCredentials credentials) {}
+  void addProxyCredentials(String host, int port, String realm, HttpClientCredentials credentials) { }
 
   @override
-  set authenticate(Future<bool> Function(Uri url, String scheme, String realm) f) {}
+  set authenticate(Future<bool> Function(Uri url, String scheme, String realm) f) { }
 
   @override
-  set authenticateProxy(Future<bool> Function(String host, int port, String scheme, String realm) f) {}
+  set authenticateProxy(Future<bool> Function(String host, int port, String scheme, String realm) f) { }
 
   @override
-  set badCertificateCallback(bool Function(X509Certificate cert, String host, int port) callback) {}
+  set badCertificateCallback(bool Function(X509Certificate cert, String host, int port) callback) { }
 
   @override
-  void close({bool force = false}) {}
+  void close({ bool force = false }) { }
 
   @override
   Future<HttpClientRequest> delete(String host, int port, String path) {
@@ -1509,7 +1629,7 @@ class _MockHttpClient implements HttpClient {
   }
 
   @override
-  set findProxy(String Function(Uri url) f) {}
+  set findProxy(String Function(Uri url) f) { }
 
   @override
   Future<HttpClientRequest> get(String host, int port, String path) {
@@ -1581,14 +1701,14 @@ class _MockHttpRequest extends HttpClientRequest {
   final HttpHeaders headers = _MockHttpHeaders();
 
   @override
-  void add(List<int> data) {}
+  void add(List<int> data) { }
 
   @override
-  void addError(Object error, [StackTrace stackTrace]) {}
+  void addError(Object error, [ StackTrace stackTrace ]) { }
 
   @override
-  Future<Null> addStream(Stream<List<int>> stream) {
-    return Future<Null>.value(null);
+  Future<void> addStream(Stream<List<int>> stream) {
+    return Future<void>.value();
   }
 
   @override
@@ -1603,11 +1723,11 @@ class _MockHttpRequest extends HttpClientRequest {
   List<Cookie> get cookies => null;
 
   @override
-  Future<HttpClientResponse> get done => null;
+  Future<HttpClientResponse> get done async => null;
 
   @override
-  Future<Null> flush() {
-    return Future<Null>.value(null);
+  Future<void> flush() {
+    return Future<void>.value();
   }
 
   @override
@@ -1617,16 +1737,16 @@ class _MockHttpRequest extends HttpClientRequest {
   Uri get uri => null;
 
   @override
-  void write(Object obj) {}
+  void write(Object obj) { }
 
   @override
-  void writeAll(Iterable<Object> objects, [String separator = '']) {}
+  void writeAll(Iterable<Object> objects, [ String separator = '' ]) { }
 
   @override
-  void writeCharCode(int charCode) {}
+  void writeCharCode(int charCode) { }
 
   @override
-  void writeln([Object obj = '']) {}
+  void writeln([ Object obj = '' ]) { }
 }
 
 /// A mocked [HttpClientResponse] which is empty and has a [statusCode] of 400.
@@ -1643,6 +1763,10 @@ class _MockHttpResponse extends Stream<List<int>> implements HttpClientResponse 
   @override
   int get contentLength => -1;
 
+  // @override
+  // TODO(tvolkert): Uncomment @override annotation once SDK change lands.
+  bool get autoUncompress => true;
+
   @override
   List<Cookie> get cookies => null;
 
@@ -1655,7 +1779,7 @@ class _MockHttpResponse extends Stream<List<int>> implements HttpClientResponse 
   bool get isRedirect => false;
 
   @override
-  StreamSubscription<List<int>> listen(void Function(List<int> event) onData, {Function onError, void Function() onDone, bool cancelOnError}) {
+  StreamSubscription<List<int>> listen(void Function(List<int> event) onData, { Function onError, void Function() onDone, bool cancelOnError }) {
     return const Stream<List<int>>.empty().listen(onData, onError: onError, onDone: onDone, cancelOnError: cancelOnError);
   }
 
@@ -1666,7 +1790,7 @@ class _MockHttpResponse extends Stream<List<int>> implements HttpClientResponse 
   String get reasonPhrase => null;
 
   @override
-  Future<HttpClientResponse> redirect([String method, Uri url, bool followLoops]) {
+  Future<HttpClientResponse> redirect([ String method, Uri url, bool followLoops ]) {
     return Future<HttpClientResponse>.error(UnsupportedError('Mocked response'));
   }
 
@@ -1683,25 +1807,25 @@ class _MockHttpHeaders extends HttpHeaders {
   List<String> operator [](String name) => <String>[];
 
   @override
-  void add(String name, Object value) {}
+  void add(String name, Object value) { }
 
   @override
-  void clear() {}
+  void clear() { }
 
   @override
-  void forEach(void Function(String name, List<String> values) f) {}
+  void forEach(void Function(String name, List<String> values) f) { }
 
   @override
-  void noFolding(String name) {}
+  void noFolding(String name) { }
 
   @override
-  void remove(String name, Object value) {}
+  void remove(String name, Object value) { }
 
   @override
-  void removeAll(String name) {}
+  void removeAll(String name) { }
 
   @override
-  void set(String name, Object value) {}
+  void set(String name, Object value) { }
 
   @override
   String value(String name) => null;

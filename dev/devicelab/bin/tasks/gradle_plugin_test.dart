@@ -63,6 +63,51 @@ Future<void> main() async {
       await runProjectTest((FlutterProject project) async {
         section('gradlew assembleRelease');
         await project.runGradleTask('assembleRelease');
+
+        // When the platform-target isn't specified, we generate the snapshots
+        // for arm and arm64.
+        final List<String> targetPlatforms = <String>[
+          'android-arm',
+          'android-arm64'
+        ];
+        for (final String targetPlatform in targetPlatforms) {
+          final String androidArmSnapshotPath = path.join(
+              project.rootPath,
+              'build',
+              'app',
+              'intermediates',
+              'flutter',
+              'release',
+              targetPlatform);
+
+          final String isolateSnapshotData =
+              path.join(androidArmSnapshotPath, 'isolate_snapshot_data');
+          if (!File(isolateSnapshotData).existsSync()) {
+            throw TaskResult.failure(
+                'Snapshot doesn\'t exist: $isolateSnapshotData');
+          }
+
+          final String isolateSnapshotInstr =
+              path.join(androidArmSnapshotPath, 'isolate_snapshot_instr');
+          if (!File(isolateSnapshotInstr).existsSync()) {
+            throw TaskResult.failure(
+                'Snapshot doesn\'t exist: $isolateSnapshotInstr');
+          }
+
+          final String vmSnapshotData =
+              path.join(androidArmSnapshotPath, 'vm_snapshot_data');
+          if (!File(isolateSnapshotData).existsSync()) {
+            throw TaskResult.failure(
+                'Snapshot doesn\'t exist: $vmSnapshotData');
+          }
+
+          final String vmSnapshotInstr =
+              path.join(androidArmSnapshotPath, 'vm_snapshot_instr');
+          if (!File(isolateSnapshotData).existsSync()) {
+            throw TaskResult.failure(
+                'Snapshot doesn\'t exist: $vmSnapshotInstr');
+          }
+        }
       });
 
       await runProjectTest((FlutterProject project) async {
@@ -158,7 +203,7 @@ class FlutterProject {
 
   static Future<FlutterProject> create(Directory directory, String name) async {
     await inDirectory(directory, () async {
-      await flutter('create', options: <String>[name]);
+      await flutter('create', options: <String>['--template=app', name]);
     });
     return FlutterProject(directory, name);
   }
@@ -166,7 +211,7 @@ class FlutterProject {
   String get rootPath => path.join(parent.path, name);
   String get androidPath => path.join(rootPath, 'android');
 
-  Future<Null> addCustomBuildType(String name, {String initWith}) async {
+  Future<void> addCustomBuildType(String name, {String initWith}) async {
     final File buildScript = File(
       path.join(androidPath, 'app', 'build.gradle'),
     );
@@ -183,7 +228,7 @@ android {
     ''');
   }
 
-  Future<Null> addProductFlavor(String name) async {
+  Future<void> addProductFlavor(String name) async {
     final File buildScript = File(
       path.join(androidPath, 'app', 'build.gradle'),
     );
@@ -202,14 +247,14 @@ android {
     ''');
   }
 
-  Future<Null> introduceError() async {
+  Future<void> introduceError() async {
     final File buildScript = File(
       path.join(androidPath, 'app', 'build.gradle'),
     );
     await buildScript.writeAsString((await buildScript.readAsString()).replaceAll('buildTypes', 'builTypes'));
   }
 
-  Future<Null> runGradleTask(String task, {List<String> options}) async {
+  Future<void> runGradleTask(String task, {List<String> options}) async {
     return _runGradleTask(workingDirectory: androidPath, task: task, options: options);
   }
 
@@ -234,7 +279,7 @@ class FlutterPluginProject {
 
   static Future<FlutterPluginProject> create(Directory directory, String name) async {
     await inDirectory(directory, () async {
-      await flutter('create', options: <String>['-t', 'plugin', name]);
+      await flutter('create', options: <String>['--template=plugin', name]);
     });
     return FlutterPluginProject(directory, name);
   }
@@ -244,14 +289,14 @@ class FlutterPluginProject {
   String get exampleAndroidPath => path.join(examplePath, 'android');
   String get debugApkPath => path.join(examplePath, 'build', 'app', 'outputs', 'apk', 'debug', 'app-debug.apk');
 
-  Future<Null> runGradleTask(String task, {List<String> options}) async {
+  Future<void> runGradleTask(String task, {List<String> options}) async {
     return _runGradleTask(workingDirectory: exampleAndroidPath, task: task, options: options);
   }
 
   bool get hasDebugApk => File(debugApkPath).existsSync();
 }
 
-Future<Null> _runGradleTask({String workingDirectory, String task, List<String> options}) async {
+Future<void> _runGradleTask({String workingDirectory, String task, List<String> options}) async {
   final ProcessResult result = await _resultOfGradleTask(
       workingDirectory: workingDirectory,
       task: task,
@@ -272,17 +317,18 @@ Future<ProcessResult> _resultOfGradleTask({String workingDirectory, String task,
   if (options != null) {
     args.addAll(options);
   }
+  final String gradle = Platform.isWindows ? 'gradlew.bat' : './gradlew';
+  print('Running Gradle: ${path.join(workingDirectory, gradle)} ${args.join(' ')}');
+  print(File(path.join(workingDirectory, gradle)).readAsStringSync());
   return Process.run(
-    './gradlew',
+    gradle,
     args,
     workingDirectory: workingDirectory,
-    environment: <String, String>{ 'JAVA_HOME': javaHome }
+    environment: <String, String>{ 'JAVA_HOME': javaHome },
   );
 }
 
 class _Dependencies {
-  String target;
-  Set<String> dependencies;
   _Dependencies(String depfilePath) {
     final RegExp _separatorExpr = RegExp(r'([^\\]) ');
     final RegExp _escapeExpr = RegExp(r'\\(.)');
@@ -301,13 +347,16 @@ class _Dependencies {
         .where((String path) => path.isNotEmpty)
         .toSet();
   }
+
+  String target;
+  Set<String> dependencies;
 }
 
 /// Returns [null] if target matches [expectedTarget], otherwise returns an error message.
 String _validateSnapshotDependency(FlutterProject project, String expectedTarget) {
   final _Dependencies deps = _Dependencies(
       path.join(project.rootPath, 'build', 'app', 'intermediates',
-          'flutter', 'debug', 'snapshot_blob.bin.d'));
+          'flutter', 'debug', 'android-arm', 'snapshot_blob.bin.d'));
   return deps.target == expectedTarget ? null :
     'Dependency file should have $expectedTarget as target. Instead has ${deps.target}';
 }

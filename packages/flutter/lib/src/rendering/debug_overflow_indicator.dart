@@ -48,7 +48,7 @@ class _OverflowRegionData {
 /// overflows. It will print on the first occurrence, and once after each time that
 /// [reassemble] is called.
 ///
-/// ## Sample code
+/// {@tool sample}
 ///
 /// ```dart
 /// class MyRenderObject extends RenderAligningShiftedBox with DebugOverflowIndicatorMixin {
@@ -81,16 +81,12 @@ class _OverflowRegionData {
 ///   }
 /// }
 /// ```
+/// {@end-tool}
 ///
 /// See also:
 ///
-///   * The code for [RenderUnconstrainedBox] and [RenderFlex] for examples of
-///     classes that use this indicator mixin.
-abstract class DebugOverflowIndicatorMixin extends RenderObject {
-  // This class is intended to be used as a mixin, and should not be
-  // extended directly.
-  factory DebugOverflowIndicatorMixin._() => null;
-
+///  * [RenderUnconstrainedBox] and [RenderFlex] for examples of classes that use this indicator mixin.
+mixin DebugOverflowIndicatorMixin on RenderObject {
   static const Color _black = Color(0xBF000000);
   static const Color _yellow = Color(0xBFFFFF00);
   // The fraction of the container that the indicator covers.
@@ -202,16 +198,23 @@ abstract class DebugOverflowIndicatorMixin extends RenderObject {
     return regions;
   }
 
-  void _reportOverflow(RelativeRect overflow, String overflowHints) {
-    overflowHints ??= 'The edge of the $runtimeType that is '
-      'overflowing has been marked in the rendering with a yellow and black '
-      'striped pattern. This is usually caused by the contents being too big '
-      'for the $runtimeType.\n'
-      'This is considered an error condition because it indicates that there '
-      'is content that cannot be seen. If the content is legitimately bigger '
-      'than the available space, consider clipping it with a ClipRect widget '
-      'before putting it in the $runtimeType, or using a scrollable '
-      'container, like a ListView.';
+  void _reportOverflow(RelativeRect overflow, List<DiagnosticsNode> overflowHints) {
+    overflowHints ??= <DiagnosticsNode>[];
+    if (overflowHints.isEmpty) {
+      overflowHints.add(ErrorDescription(
+        'The edge of the $runtimeType that is '
+        'overflowing has been marked in the rendering with a yellow and black '
+        'striped pattern. This is usually caused by the contents being too big '
+        'for the $runtimeType.'
+      ));
+      overflowHints.add(ErrorHint(
+        'This is considered an error condition because it indicates that there '
+        'is content that cannot be seen. If the content is legitimately bigger '
+        'than the available space, consider clipping it with a ClipRect widget '
+        'before putting it in the $runtimeType, or using a scrollable '
+        'container, like a ListView.'
+      ));
+    }
 
     final List<String> overflows = <String>[];
     if (overflow.left > 0.0)
@@ -236,18 +239,22 @@ abstract class DebugOverflowIndicatorMixin extends RenderObject {
         overflows[overflows.length - 1] = 'and ${overflows[overflows.length - 1]}';
         overflowText = overflows.join(', ');
     }
+    // TODO(jacobr): add the overflows in pixels as structured data so they can
+    // be visualized in debugging tools.
     FlutterError.reportError(
       FlutterErrorDetailsForRendering(
-        exception: 'A $runtimeType overflowed by $overflowText.',
+        exception: FlutterError('A $runtimeType overflowed by $overflowText.'),
         library: 'rendering library',
-        context: 'during layout',
+        context: ErrorDescription('during layout'),
         renderObject: this,
-        informationCollector: (StringBuffer information) {
-          information.writeln(overflowHints);
-          information.writeln('The specific $runtimeType in question is:');
-          information.writeln('  ${toStringShallow(joiner: '\n  ')}');
-          information.writeln('◢◤' * (FlutterError.wrapWidth ~/ 2));
-        },
+        informationCollector: () sync* {
+          yield* overflowHints;
+          yield describeForError('The specific $runtimeType in question is');
+          // TODO(jacobr): this line is ascii art that it would be nice to
+          // handle a little more generically in GUI debugging clients in the
+          // future.
+          yield DiagnosticsNode.message('◢◤' * (FlutterError.wrapWidth ~/ 2), allowWrap: false);
+        }
       ),
     );
   }
@@ -263,7 +270,7 @@ abstract class DebugOverflowIndicatorMixin extends RenderObject {
     Offset offset,
     Rect containerRect,
     Rect childRect, {
-    String overflowHints,
+    List<DiagnosticsNode> overflowHints,
   }) {
     final RelativeRect overflow = RelativeRect.fromRect(containerRect, childRect);
 

@@ -5,13 +5,14 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' as ui show instantiateImageCodec, Codec;
+import 'dart:ui' as ui show Codec;
 import 'dart:ui' show Size, Locale, TextDirection, hashValues;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'binding.dart';
+import 'debug.dart';
 import 'image_cache.dart';
 import 'image_stream.dart';
 
@@ -170,7 +171,7 @@ class ImageConfiguration {
 ///
 /// The following image formats are supported: {@macro flutter.dart:ui.imageFormats}
 ///
-/// ## Sample code
+/// {@tool sample}
 ///
 /// The following shows the code required to write a widget that fully conforms
 /// to the [ImageProvider] and [Widget] protocols. (It is essentially a
@@ -217,8 +218,9 @@ class ImageConfiguration {
 ///       // If the keys are the same, then we got the same image back, and so we don't
 ///       // need to update the listeners. If the key changed, though, we must make sure
 ///       // to switch our listeners to the new image stream.
-///       oldImageStream?.removeListener(_updateImage);
-///       _imageStream.addListener(_updateImage);
+///       final ImageStreamListener listener = ImageStreamListener(_updateImage);
+///       oldImageStream?.removeListener(listener);
+///       _imageStream.addListener(listener);
 ///     }
 ///   }
 ///
@@ -231,7 +233,7 @@ class ImageConfiguration {
 ///
 ///   @override
 ///   void dispose() {
-///     _imageStream.removeListener(_updateImage);
+///     _imageStream.removeListener(ImageStreamListener(_updateImage));
 ///     super.dispose();
 ///   }
 ///
@@ -244,6 +246,7 @@ class ImageConfiguration {
 ///   }
 /// }
 /// ```
+/// {@end-tool}
 @optionalTypeArgs
 abstract class ImageProvider<T> {
   /// Abstract const constructor. This constructor enables subclasses to provide
@@ -261,27 +264,60 @@ abstract class ImageProvider<T> {
     assert(configuration != null);
     final ImageStream stream = ImageStream();
     T obtainedKey;
-    obtainKey(configuration).then<void>((T key) {
-      obtainedKey = key;
-      stream.setCompleter(PaintingBinding.instance.imageCache.putIfAbsent(key, () => load(key)));
-    }).catchError(
-      (dynamic exception, StackTrace stack) async {
-        FlutterError.reportError(FlutterErrorDetails(
-          exception: exception,
-          stack: stack,
-          library: 'services library',
-          context: 'while resolving an image',
-          silent: true, // could be a network error or whatnot
-          informationCollector: (StringBuffer information) {
-            information.writeln('Image provider: $this');
-            information.writeln('Image configuration: $configuration');
-            if (obtainedKey != null)
-              information.writeln('Image key: $obtainedKey');
-          }
-        ));
-        return null;
+    bool didError = false;
+    Future<void> handleError(dynamic exception, StackTrace stack) async {
+      if (didError) {
+        return;
       }
+      didError = true;
+      await null; // wait an event turn in case a listener has been added to the image stream.
+      final _ErrorImageCompleter imageCompleter = _ErrorImageCompleter();
+      stream.setCompleter(imageCompleter);
+      imageCompleter.setError(
+        exception: exception,
+        stack: stack,
+        context: ErrorDescription('while resolving an image'),
+        silent: true, // could be a network error or whatnot
+        informationCollector: () sync* {
+          yield DiagnosticsProperty<ImageProvider>('Image provider', this);
+          yield DiagnosticsProperty<ImageConfiguration>('Image configuration', configuration);
+          yield DiagnosticsProperty<T>('Image key', obtainedKey, defaultValue: null);
+        },
+      );
+    }
+
+    // If an error is added to a synchronous completer before a listener has been
+    // added, it can throw an error both into the zone and up the stack. Thus, it
+    // looks like the error has been caught, but it is in fact also bubbling to the
+    // zone. Since we cannot prevent all usage of Completer.sync here, or rather
+    // that changing them would be too breaking, we instead hook into the same
+    // zone mechanism to intercept the uncaught error and deliver it to the
+    // image stream's error handler. Note that these errors may be duplicated,
+    // hence the need for the `didError` flag.
+    final Zone dangerZone = Zone.current.fork(
+      specification: ZoneSpecification(
+        handleUncaughtError: (Zone zone, ZoneDelegate delegate, Zone parent, Object error, StackTrace stackTrace) {
+          handleError(error, stackTrace);
+        }
+      )
     );
+    dangerZone.runGuarded(() {
+      Future<T> key;
+      try {
+        key = obtainKey(configuration);
+      } catch (error, stackTrace) {
+        handleError(error, stackTrace);
+        return;
+      }
+      key.then<void>((T key) {
+        obtainedKey = key;
+        final ImageStreamCompleter completer = PaintingBinding.instance
+            .imageCache.putIfAbsent(key, () => load(key), onError: handleError);
+        if (completer != null) {
+          stream.setCompleter(completer);
+        }
+      }).catchError(handleError);
+    });
     return stream;
   }
 
@@ -299,10 +335,10 @@ abstract class ImageProvider<T> {
   /// The [configuration] is optional and defaults to
   /// [ImageConfiguration.empty].
   ///
-  /// ## Sample code
+  /// {@tool sample}
   ///
   /// The following sample code shows how an image loaded using the [Image]
-  /// widget can be evicted using a [NetworkImage] with a matching url.
+  /// widget can be evicted using a [NetworkImage] with a matching URL.
   ///
   /// ```dart
   /// class MyWidget extends StatelessWidget {
@@ -322,7 +358,8 @@ abstract class ImageProvider<T> {
   ///   }
   /// }
   /// ```
-  Future<bool> evict({ImageCache cache, ImageConfiguration configuration = ImageConfiguration.empty}) async {
+  /// {@end-tool}
+  Future<bool> evict({ ImageCache cache, ImageConfiguration configuration = ImageConfiguration.empty }) async {
     cache ??= imageCache;
     final T key = await obtainKey(configuration);
     return cache.evict(key);
@@ -360,7 +397,7 @@ class AssetBundleImageKey {
   const AssetBundleImageKey({
     @required this.bundle,
     @required this.name,
-    @required this.scale
+    @required this.scale,
   }) : assert(bundle != null),
        assert(name != null),
        assert(scale != null);
@@ -411,10 +448,10 @@ abstract class AssetBundleImageProvider extends ImageProvider<AssetBundleImageKe
     return MultiFrameImageStreamCompleter(
       codec: _loadAsync(key),
       scale: key.scale,
-      informationCollector: (StringBuffer information) {
-        information.writeln('Image provider: $this');
-        information.write('Image key: $key');
-      }
+      informationCollector: () sync* {
+        yield DiagnosticsProperty<ImageProvider>('Image provider', this);
+        yield DiagnosticsProperty<AssetBundleImageKey>('Image key', key);
+      },
     );
   }
 
@@ -427,7 +464,7 @@ abstract class AssetBundleImageProvider extends ImageProvider<AssetBundleImageKe
     final ByteData data = await key.bundle.load(key.name);
     if (data == null)
       throw 'Unable to read data';
-    return await ui.instantiateImageCodec(data.buffer.asUint8List());
+    return await PaintingBinding.instance.instantiateImageCodec(data.buffer.asUint8List());
   }
 }
 
@@ -438,16 +475,16 @@ abstract class AssetBundleImageProvider extends ImageProvider<AssetBundleImageKe
 /// See also:
 ///
 ///  * [Image.network] for a shorthand of an [Image] widget backed by [NetworkImage].
-// TODO(ianh): Find some way to honour cache headers to the extent that when the
+// TODO(ianh): Find some way to honor cache headers to the extent that when the
 // last reference to an image is released, we proactively evict the image from
 // our cache if the headers describe the image as having expired at that point.
 class NetworkImage extends ImageProvider<NetworkImage> {
   /// Creates an object that fetches the image at the given URL.
   ///
   /// The arguments must not be null.
-  const NetworkImage(this.url, { this.scale = 1.0 , this.headers })
-      : assert(url != null),
-        assert(scale != null);
+  const NetworkImage(this.url, { this.scale = 1.0, this.headers })
+    : assert(url != null),
+      assert(scale != null);
 
   /// The URL from which the image will be fetched.
   final String url;
@@ -465,35 +502,71 @@ class NetworkImage extends ImageProvider<NetworkImage> {
 
   @override
   ImageStreamCompleter load(NetworkImage key) {
+    // Ownership of this controller is handed off to [_loadAsync]; it is that
+    // method's responsibility to close the controller's stream when the image
+    // has been loaded or an error is thrown.
+    final StreamController<ImageChunkEvent> chunkEvents = StreamController<ImageChunkEvent>();
+
     return MultiFrameImageStreamCompleter(
-      codec: _loadAsync(key),
+      codec: _loadAsync(key, chunkEvents),
+      chunkEvents: chunkEvents.stream,
       scale: key.scale,
-      informationCollector: (StringBuffer information) {
-        information.writeln('Image provider: $this');
-        information.write('Image key: $key');
-      }
+      informationCollector: () sync* {
+        yield DiagnosticsProperty<ImageProvider>('Image provider', this);
+        yield DiagnosticsProperty<NetworkImage>('Image key', key);
+      },
     );
   }
 
-  static final HttpClient _httpClient = HttpClient();
+  // Do not access this field directly; use [_httpClient] instead.
+  // We set `autoUncompress` to false to ensure that we can trust the value of
+  // the `Content-Length` HTTP header. We automatically uncompress the content
+  // in our call to [consolidateHttpClientResponseBytes].
+  static final HttpClient _sharedHttpClient = HttpClient()..autoUncompress = false;
 
-  Future<ui.Codec> _loadAsync(NetworkImage key) async {
-    assert(key == this);
+  static HttpClient get _httpClient {
+    HttpClient client = _sharedHttpClient;
+    assert(() {
+      if (debugNetworkImageHttpClientProvider != null)
+        client = debugNetworkImageHttpClientProvider();
+      return true;
+    }());
+    return client;
+  }
 
-    final Uri resolved = Uri.base.resolve(key.url);
-    final HttpClientRequest request = await _httpClient.getUrl(resolved);
-    headers?.forEach((String name, String value) {
-      request.headers.add(name, value);
-    });
-    final HttpClientResponse response = await request.close();
-    if (response.statusCode != HttpStatus.ok)
-      throw Exception('HTTP request failed, statusCode: ${response?.statusCode}, $resolved');
+  Future<ui.Codec> _loadAsync(
+    NetworkImage key,
+    StreamController<ImageChunkEvent> chunkEvents,
+  ) async {
+    try {
+      assert(key == this);
 
-    final Uint8List bytes = await consolidateHttpClientResponseBytes(response);
-    if (bytes.lengthInBytes == 0)
-      throw Exception('NetworkImage is an empty file: $resolved');
+      final Uri resolved = Uri.base.resolve(key.url);
+      final HttpClientRequest request = await _httpClient.getUrl(resolved);
+      headers?.forEach((String name, String value) {
+        request.headers.add(name, value);
+      });
+      final HttpClientResponse response = await request.close();
+      if (response.statusCode != HttpStatus.ok)
+        throw Exception('HTTP request failed, statusCode: ${response?.statusCode}, $resolved');
 
-    return await ui.instantiateImageCodec(bytes);
+      final Uint8List bytes = await consolidateHttpClientResponseBytes(
+        response,
+        client: _httpClient,
+        onBytesReceived: (int cumulative, int total) {
+          chunkEvents.add(ImageChunkEvent(
+            cumulativeBytesLoaded: cumulative,
+            expectedTotalBytes: total,
+          ));
+        },
+      );
+      if (bytes.lengthInBytes == 0)
+        throw Exception('NetworkImage is an empty file: $resolved');
+
+      return PaintingBinding.instance.instantiateImageCodec(bytes);
+    } finally {
+      chunkEvents.close();
+    }
   }
 
   @override
@@ -523,8 +596,8 @@ class FileImage extends ImageProvider<FileImage> {
   ///
   /// The arguments must not be null.
   const FileImage(this.file, { this.scale = 1.0 })
-      : assert(file != null),
-        assert(scale != null);
+    : assert(file != null),
+      assert(scale != null);
 
   /// The file to decode into an image.
   final File file;
@@ -542,9 +615,9 @@ class FileImage extends ImageProvider<FileImage> {
     return MultiFrameImageStreamCompleter(
       codec: _loadAsync(key),
       scale: key.scale,
-      informationCollector: (StringBuffer information) {
-        information.writeln('Path: ${file?.path}');
-      }
+      informationCollector: () sync* {
+        yield ErrorDescription('Path: ${file?.path}');
+      },
     );
   }
 
@@ -555,7 +628,7 @@ class FileImage extends ImageProvider<FileImage> {
     if (bytes.lengthInBytes == 0)
       return null;
 
-    return await ui.instantiateImageCodec(bytes);
+    return await PaintingBinding.instance.instantiateImageCodec(bytes);
   }
 
   @override
@@ -591,8 +664,8 @@ class MemoryImage extends ImageProvider<MemoryImage> {
   ///
   /// The arguments must not be null.
   const MemoryImage(this.bytes, { this.scale = 1.0 })
-      : assert(bytes != null),
-        assert(scale != null);
+    : assert(bytes != null),
+      assert(scale != null);
 
   /// The bytes to decode into an image.
   final Uint8List bytes;
@@ -609,14 +682,14 @@ class MemoryImage extends ImageProvider<MemoryImage> {
   ImageStreamCompleter load(MemoryImage key) {
     return MultiFrameImageStreamCompleter(
       codec: _loadAsync(key),
-      scale: key.scale
+      scale: key.scale,
     );
   }
 
   Future<ui.Codec> _loadAsync(MemoryImage key) {
     assert(key == this);
 
-    return ui.instantiateImageCodec(bytes);
+    return PaintingBinding.instance.instantiateImageCodec(bytes);
   }
 
   @override
@@ -662,7 +735,7 @@ class MemoryImage extends ImageProvider<MemoryImage> {
 /// AssetImage('icons/heart.png', scale: 1.5)
 /// ```
 ///
-///## Assets in packages
+/// ## Assets in packages
 ///
 /// To fetch an asset from a package, the [package] argument must be provided.
 /// For instance, suppose the structure above is inside a package called
@@ -688,14 +761,14 @@ class MemoryImage extends ImageProvider<MemoryImage> {
 /// lib/backgrounds/background1.png
 /// lib/backgrounds/background2.png
 /// lib/backgrounds/background3.png
-///```
+/// ```
 ///
 /// To include, say the first image, the `pubspec.yaml` of the app should specify
 /// it in the `assets` section:
 ///
 /// ```yaml
-///  assets:
-///    - packages/fancy_backgrounds/backgrounds/background1.png
+///   assets:
+///     - packages/fancy_backgrounds/backgrounds/background1.png
 /// ```
 ///
 /// The `lib/` is implied, so it should not be included in the asset path.
@@ -715,7 +788,8 @@ class ExactAssetImage extends AssetBundleImageProvider {
   /// The [package] argument must be non-null when fetching an asset that is
   /// included in a package. See the documentation for the [ExactAssetImage] class
   /// itself for details.
-  const ExactAssetImage(this.assetName, {
+  const ExactAssetImage(
+    this.assetName, {
     this.scale = 1.0,
     this.bundle,
     this.package,
@@ -751,7 +825,7 @@ class ExactAssetImage extends AssetBundleImageProvider {
     return SynchronousFuture<AssetBundleImageKey>(AssetBundleImageKey(
       bundle: bundle ?? configuration.bundle ?? rootBundle,
       name: keyName,
-      scale: scale
+      scale: scale,
     ));
   }
 
@@ -770,4 +844,25 @@ class ExactAssetImage extends AssetBundleImageProvider {
 
   @override
   String toString() => '$runtimeType(name: "$keyName", scale: $scale, bundle: $bundle)';
+}
+
+// A completer used when resolving an image fails sync.
+class _ErrorImageCompleter extends ImageStreamCompleter {
+  _ErrorImageCompleter();
+
+  void setError({
+    DiagnosticsNode context,
+    dynamic exception,
+    StackTrace stack,
+    InformationCollector informationCollector,
+    bool silent = false,
+  }) {
+    reportError(
+      context: context,
+      exception: exception,
+      stack: stack,
+      informationCollector: informationCollector,
+      silent: silent,
+    );
+  }
 }

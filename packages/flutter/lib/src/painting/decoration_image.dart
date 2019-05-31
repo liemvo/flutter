@@ -238,9 +238,10 @@ class DecorationImagePainter {
 
     final ImageStream newImageStream = _details.image.resolve(configuration);
     if (newImageStream.key != _imageStream?.key) {
-      _imageStream?.removeListener(_imageListener);
+      final ImageStreamListener listener = ImageStreamListener(_handleImage);
+      _imageStream?.removeListener(listener);
       _imageStream = newImageStream;
-      _imageStream.addListener(_imageListener);
+      _imageStream.addListener(listener);
     }
     if (_image == null)
       return;
@@ -261,13 +262,14 @@ class DecorationImagePainter {
       centerSlice: _details.centerSlice,
       repeat: _details.repeat,
       flipHorizontally: flipHorizontally,
+      filterQuality: FilterQuality.low,
     );
 
     if (clipPath != null)
       canvas.restore();
   }
 
-  void _imageListener(ImageInfo value, bool synchronousCall) {
+  void _handleImage(ImageInfo value, bool synchronousCall) {
     if (_image == value)
       return;
     _image = value;
@@ -283,7 +285,7 @@ class DecorationImagePainter {
   /// After this method has been called, the object is no longer usable.
   @mustCallSuper
   void dispose() {
-    _imageStream?.removeListener(_imageListener);
+    _imageStream?.removeListener(ImageStreamListener(_handleImage));
   }
 
   @override
@@ -347,7 +349,12 @@ class DecorationImagePainter {
 ///    invert will be applied after it. This is primarily used for implementing
 ///    smart invert on iOS.
 ///
-/// The `canvas`, `rect`, `image`, `scale`, `alignment`, `repeat`, and `flipHorizontally`
+///  * `filterQuality`: Use this to change the quality when scaling an image.
+///     Use the [FilterQuality.low] quality setting to scale the image, which corresponds to
+///     bilinear interpolation, rather than the default [FilterQuality.none] which corresponds
+///     to nearest-neighbor.
+///
+/// The `canvas`, `rect`, `image`, `scale`, `alignment`, `repeat`, `flipHorizontally` and `filterQuality`
 /// arguments must not be null.
 ///
 /// See also:
@@ -367,6 +374,7 @@ void paintImage({
   ImageRepeat repeat = ImageRepeat.noRepeat,
   bool flipHorizontally = false,
   bool invertColors = false,
+  FilterQuality filterQuality = FilterQuality.low,
 }) {
   assert(canvas != null);
   assert(image != null);
@@ -381,7 +389,7 @@ void paintImage({
   if (centerSlice != null) {
     sliceBorder = Offset(
       centerSlice.left + inputSize.width - centerSlice.right,
-      centerSlice.top + inputSize.height - centerSlice.bottom
+      centerSlice.top + inputSize.height - centerSlice.bottom,
     );
     outputSize -= sliceBorder;
     inputSize -= sliceBorder;
@@ -407,10 +415,7 @@ void paintImage({
   if (colorFilter != null)
     paint.colorFilter = colorFilter;
   if (sourceSize != destinationSize) {
-    // Use the "low" quality setting to scale the image, which corresponds to
-    // bilinear interpolation, rather than the default "none" which corresponds
-    // to nearest-neighbor.
-    paint.filterQuality = FilterQuality.low;
+    paint.filterQuality = filterQuality;
   }
   paint.invertColors = invertColors;
   final double halfWidthDelta = (outputSize.width - destinationSize.width) / 2.0;
@@ -432,24 +437,27 @@ void paintImage({
   }
   if (centerSlice == null) {
     final Rect sourceRect = alignment.inscribe(
-      sourceSize, Offset.zero & inputSize
+      sourceSize, Offset.zero & inputSize,
     );
-    for (Rect tileRect in _generateImageTileRects(rect, destinationRect, repeat))
-      canvas.drawImageRect(image, sourceRect, tileRect, paint);
+    if (repeat == ImageRepeat.noRepeat) {
+      canvas.drawImageRect(image, sourceRect, destinationRect, paint);
+    } else {
+      for (Rect tileRect in _generateImageTileRects(rect, destinationRect, repeat))
+        canvas.drawImageRect(image, sourceRect, tileRect, paint);
+    }
   } else {
-    for (Rect tileRect in _generateImageTileRects(rect, destinationRect, repeat))
-      canvas.drawImageNine(image, centerSlice, tileRect, paint);
+    if (repeat == ImageRepeat.noRepeat) {
+      canvas.drawImageNine(image, centerSlice, destinationRect, paint);
+    } else {
+      for (Rect tileRect in _generateImageTileRects(rect, destinationRect, repeat))
+        canvas.drawImageNine(image, centerSlice, tileRect, paint);
+    }
   }
   if (needSave)
     canvas.restore();
 }
 
 Iterable<Rect> _generateImageTileRects(Rect outputRect, Rect fundamentalRect, ImageRepeat repeat) sync* {
-  if (repeat == ImageRepeat.noRepeat) {
-    yield fundamentalRect;
-    return;
-  }
-
   int startX = 0;
   int startY = 0;
   int stopX = 0;

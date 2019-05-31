@@ -20,13 +20,13 @@ void main() {
     Directory intellijDir;
     Directory toolsDir;
 
-    Map<String, String> _getFilesystemContents([Directory root]) {
+    Map<String, String> _getFilesystemContents([ Directory root ]) {
       final String tempPath = tempDir.absolute.path;
       final List<String> paths =
-          (root ?? tempDir).listSync(recursive: true).map((FileSystemEntity entity) {
-        final String relativePath = fs.path.relative(entity.path, from: tempPath);
-        return relativePath;
-      }).toList();
+        (root ?? tempDir).listSync(recursive: true).map((FileSystemEntity entity) {
+          final String relativePath = fs.path.relative(entity.path, from: tempPath);
+          return relativePath;
+        }).toList();
       final Map<String, String> contents = <String, String>{};
       for (String path in paths) {
         final String absPath = fs.path.join(tempPath, path);
@@ -39,7 +39,7 @@ void main() {
       return contents;
     }
 
-    Map<String, String> _getManifest(Directory base, String marker, {bool isTemplate = false}) {
+    Map<String, String> _getManifest(Directory base, String marker, { bool isTemplate = false }) {
       final String basePath = fs.path.relative(base.path, from: tempDir.absolute.path);
       final String suffix = isTemplate ? Template.copyTemplateExtension : '';
       return <String, String>{
@@ -76,7 +76,7 @@ void main() {
       return fs.file(absPath).existsSync() || fs.directory(absPath).existsSync();
     }
 
-    Future<Null> _updateIdeConfig({
+    Future<void> _updateIdeConfig({
       Directory dir,
       List<String> args = const <String>[],
       Map<String, String> expectedContents = const <String, String>{},
@@ -84,7 +84,7 @@ void main() {
     }) async {
       dir ??= tempDir;
       final IdeConfigCommand command = IdeConfigCommand();
-      final CommandRunner<Null> runner = createTestCommandRunner(command);
+      final CommandRunner<void> runner = createTestCommandRunner(command);
       final List<String> finalArgs = <String>['--flutter-root=${tempDir.absolute.path}', 'ide-config'];
       finalArgs.addAll(args);
       await runner.run(finalArgs);
